@@ -1,0 +1,82 @@
+#cloud-config
+autoinstall:
+  version: 1
+
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+    variant: ""
+
+  identity:
+    hostname: node-1
+    username: thang2k6adu
+    password: "$6$REPLACE_WITH_HASHED_PASSWORD"
+
+  ssh:
+    install-server: true
+    allow-pw: false
+    authorized-keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAREPLACE_WITH_YOUR_KEY
+
+  network:
+    version: 2
+    ethernets:
+      default:
+        match:
+          name: "e*"
+        dhcp4: true
+
+  storage:
+    layout:
+      name: lvm
+
+  timezone: Asia/Ho_Chi_Minh
+
+  packages:
+    - curl
+    - wget
+    - git
+    - vim
+    - htop
+    - net-tools
+    - ufw
+    - fail2ban
+    - chrony
+    - ca-certificates
+
+  late-commands:
+    # Enable services
+    - curtin in-target -- systemctl enable ssh
+    - curtin in-target -- systemctl enable ufw
+    - curtin in-target -- systemctl enable fail2ban
+    - curtin in-target -- systemctl enable chrony
+
+    # Firewall basic rules
+    - curtin in-target -- ufw default deny incoming
+    - curtin in-target -- ufw default allow outgoing
+    - curtin in-target -- ufw allow 8022/tcp
+    - curtin in-target -- ufw --force enable
+
+    # SSH hardening
+    - curtin in-target -- sed -i 's/^#\?Port .*/Port 8022/' /etc/ssh/sshd_config
+    - curtin in-target -- sed -i 's/^#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+    - curtin in-target -- sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+    - curtin in-target -- sed -i 's/^#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+    - curtin in-target -- sed -i 's/^#MaxAuthTries.*/MaxAuthTries 3/' /etc/ssh/sshd_config
+    - curtin in-target -- sed -i 's/^#ClientAliveInterval.*/ClientAliveInterval 300/' /etc/ssh/sshd_config
+    - curtin in-target -- sed -i 's/^#ClientAliveCountMax.*/ClientAliveCountMax 2/' /etc/ssh/sshd_config
+
+    - curtin in-target -- systemctl restart ssh
+
+    # Fail2ban basic config
+    - curtin in-target -- cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
+    - curtin in-target -- sed -i 's/^bantime.*/bantime = 3600/' /etc/fail2ban/jail.local
+    - curtin in-target -- sed -i 's/^findtime.*/findtime = 600/' /etc/fail2ban/jail.local
+    - curtin in-target -- sed -i 's/^maxretry.*/maxretry = 3/' /etc/fail2ban/jail.local
+    - curtin in-target -- bash -c "printf '[sshd]\nenabled = true\nport = 8022\n' > /etc/fail2ban/jail.d/sshd.local"
+    - curtin in-target -- systemctl restart fail2ban
+
+    - curtin in-target -- swapoff -a
+    - curtin in-target -- sed -i '/swap/d' /etc/fstab
+    - curtin in-target -- bash -c "echo 'vm.swappiness=0' > /etc/sysctl.d/99-k8s.conf"
+    - curtin in-target -- sysctl --system
