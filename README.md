@@ -363,7 +363,7 @@ autoinstall:
 # VIII. BƯỚC 6 – INSTALLER LOGIC (CỐT LÕI)
 
 ## `/srv/tftp/grub/grub.cfg`
-
+<!-- Just for grub, not  pxelinux-->
 ```cfg
 set timeout=5
 
@@ -412,3 +412,42 @@ Nếu mày muốn **bước tiếp theo đúng level senior**:
 * Debug PXE treo
 
 👉 nói **“tiếp level senior”** là tao làm tiếp.
+
+3.1 Ghi MAC các node trống
+
+Trong BIOS / switch / IPMI.
+
+Ví dụ:
+
+AA:BB:CC:DD:EE:01
+AA:BB:CC:DD:EE:02
+
+3.2 Thêm reservation
+sudo nano /etc/dnsmasq.d/reservation.conf
+
+dhcp-host=AA:BB:CC:DD:EE:01,node-01,192.168.0.11
+dhcp-host=AA:BB:CC:DD:EE:02,node-02,192.168.0.12
+
+
+Restart:
+
+sudo systemctl restart dnsmasq
+
+
+👉 Từ đây:
+
+Máy nào cũng DHCP
+
+Nhưng IP + hostname CỐ ĐỊNH
+
+
+
+
+DEFAULT install
+PROMPT 0
+TIMEOUT 50
+
+LABEL install
+  KERNEL ubuntu/vmlinuz
+  INITRD ubuntu/initrd
+  APPEND ip=dhcp ---
