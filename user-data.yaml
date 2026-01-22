@@ -10,13 +10,14 @@ autoinstall:
   identity:
     hostname: node-1
     username: thang2k6adu
-    password: "$6$REPLACE_WITH_HASHED_PASSWORD"
+    # Just for testing, dont use psw for production
+    password: "$6$Ai8vNu3WEm3UefYI$a4z1rRgp06uOcaHukfwNS8T.w5xkJw2UVLoF2/oOdKiC2nwswBtHv72eyBAx6Jejd1zyJ.lgUqycX8/qhQP101"
 
   ssh:
     install-server: true
     allow-pw: false
     authorized-keys:
-      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAREPLACE_WITH_YOUR_KEY
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPrDNYZt+doMzqGwcElOycPaHKoMmZ9743pAVw9Q29KC thang2k6adu@gmail.com
 
   network:
     version: 2
@@ -46,7 +47,7 @@ autoinstall:
 
   late-commands:
     # Enable services
-    - curtin in-target -- systemctl enable ssh
+    - curtin in-target -- systemctl enable ssh.service
     - curtin in-target -- systemctl enable ufw
     - curtin in-target -- systemctl enable fail2ban
     - curtin in-target -- systemctl enable chrony
@@ -60,13 +61,13 @@ autoinstall:
     # SSH hardening
     - curtin in-target -- sed -i 's/^#\?Port .*/Port 8022/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
-    - curtin in-target -- sed -i 's/^#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
-    - curtin in-target -- sed -i 's/^#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+    - curtin in-target -- sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+    - curtin in-target -- sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#MaxAuthTries.*/MaxAuthTries 3/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#ClientAliveInterval.*/ClientAliveInterval 300/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#ClientAliveCountMax.*/ClientAliveCountMax 2/' /etc/ssh/sshd_config
 
-    - curtin in-target -- systemctl restart ssh
+    - curtin in-target -- systemctl restart ssh.service
 
     # Fail2ban basic config
     - curtin in-target -- cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
