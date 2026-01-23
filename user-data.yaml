@@ -8,8 +8,9 @@ autoinstall:
     variant: ""
 
   identity:
-    hostname: node-1
+    hostname: localhost
     username: thang2k6adu
+    password: "$6$3KSEmEFffX6Gb5oH$4VL.PXtoT1bjs3UAwHmtaGRCByvzqn2PG3hoJ71.EeXC7KHdqSaOEN9No54uLcBPVSsOWptDc39WY3DmeftCi1"
 
   ssh:
     install-server: true
@@ -44,6 +45,22 @@ autoinstall:
     - ca-certificates
 
   late-commands:
+    - |
+      curtin in-target -- bash -c '
+      MY_IP=$(hostname -I | awk "{print \$1}")
+      # Cắt lấy số cuối cùng (Octet thứ 4)
+      MY_ID=$(echo $MY_IP | awk -F. "{print \$4}")
+      NEW_HOSTNAME="node-$MY_ID"
+
+      echo "--> Detected IP: $MY_IP. Renaming to: $NEW_HOSTNAME"
+
+      # Ghi vào /etc/hostname
+      echo "$NEW_HOSTNAME" > /etc/hostname
+      # Sửa trong /etc/hosts (Thay localhost bằng tên mới để tránh lỗi sudo)
+      sed -i "s/localhost/$NEW_HOSTNAME/g" /etc/hosts
+      # Cập nhật ngay lập tức (cho session hiện tại nếu cần)
+      hostnamectl set-hostname $NEW_HOSTNAME || true
+      '
     # Enable services
     - curtin in-target -- systemctl enable ssh.service
     - curtin in-target -- systemctl enable ufw

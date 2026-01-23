@@ -165,6 +165,10 @@ journalctl -u dnsmasq -f
 (OPEN port below this, end of this file before do this)
 
 ```bash
+sudo ufw allow 67/udp
+sudo ufw allow 68/udp
+sudo ufw allow 69/udp
+sudo ufw allow 80/tcp
 sudo ufw allow from 192.168.0.0/24
 ```
 
@@ -191,13 +195,6 @@ sudo apt update
 sudo apt install -y nfs-kernel-server
 
 ```
-sudo nano /etc/default/nfs-kernel-server
-
-RPCMOUNTDOPTS="--port 20048"
-
-sudo systemctl restart nfs-kernel-server
- sudo systemctl status nfs-kernel-server
-
 
 Mount:
 
@@ -327,6 +324,7 @@ local-hostname: node-01
 sudo nano /srv/http/autoinstall/user-data
 ```
 
+<!-- Nhớ copy cả #cloud-config -->
 ```yaml
 #cloud-config
 autoinstall:
