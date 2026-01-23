@@ -408,3 +408,7 @@ sudo ufw allow 67/udp
 sudo ufw allow 68/udp
 sudo ufw allow 69/udp
 sudo ufw allow 80/tcp
+
+ERR PXE-E51: No DHCP or proxyDHCP offers were received
+Lỗi này là do config dnsasq, xem kĩ ip a, đối chiếu với dnsasq config file (pxe.conf), có thể là gateway, dns, dhcp rang
+
