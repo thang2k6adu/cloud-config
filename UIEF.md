@@ -403,3 +403,8 @@ tftp 192.168.115.129 -c get grubx64.efi
 
 ---
 
+UDP 67   (server)
+UDP 68   (client – outbound)
+UDP 69
+<!-- Nó trả từ UDP random (>1024) -->
+UDP 1024–65535
