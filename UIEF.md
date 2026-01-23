@@ -100,7 +100,7 @@ tftp-root=/srv/tftp
 dhcp-match=set:bios,option:client-arch,0
 dhcp-match=set:uefi,option:client-arch,7
 
-dhcp-boot=tag:bios,pxelinux.
+dhcp-boot=tag:bios,pxelinux.0
 dhcp-boot=tag:uefi,grubx64.efi
 ```
 
