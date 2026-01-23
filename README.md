@@ -207,6 +207,7 @@ LABEL install
   KERNEL ubuntu/vmlinuz
   INITRD ubuntu/initrd
   APPEND ip=dhcp \
+         boot=casper \
          url=http://192.168.115.129/ubuntu/ubuntu-22.04.5-live-server-amd64.iso \
          autoinstall \
          ds=nocloud-net;s=http://192.168.115.129/autoinstall/ ---
@@ -226,6 +227,7 @@ set default=0
 
 menuentry "Install Ubuntu Server (PXE Autoinstall)" {
     linux /ubuntu/vmlinuz ip=dhcp \
+        boot=casper \
         url=http://192.168.115.129/ubuntu/ubuntu-22.04.5-live-server-amd64.iso \
         autoinstall \
         ds=nocloud-net;s=http://192.168.115.129/autoinstall/ ---
@@ -409,6 +411,25 @@ sudo ufw allow 68/udp
 sudo ufw allow 69/udp
 sudo ufw allow 80/tcp
 
-ERR PXE-E51: No DHCP or proxyDHCP offers were received
-Lỗi này là do config dnsasq, xem kĩ ip a, đối chiếu với dnsasq config file (pxe.conf), có thể là gateway, dns, dhcp rang
+## ERR PXE-E51: No DHCP or proxyDHCP offers were received
+
+Lỗi này là do config **dnsmasq**.  
+Xem kỹ `ip a`, đối chiếu với config file của dnsmasq (`pxe.conf`).
+
+Các điểm cần kiểm tra:
+- IP interface
+- Gateway
+- DNS
+- DHCP range
+
+Nếu dùng vmware máy ảo, nhớ bật hết bridge lên, nếu ko sẽ ko broadcast được
+
+## ERR PXE-EA0: Network boot canceled by keystroke
+
+timeout, tắt đi bật lại, chờ lâu
+
+## Can't open /dev/sr0: No medium found
+
+boot=casper \ thêm cái này vào bên trên (pxelinux.cfg/default, grub) (đã thêm)
+
 
