@@ -382,19 +382,3 @@ ls -lh /srv/tftp
 
 ---
 
-## 🔒 CHỐT CUỐI
-
-* BIOS PXE = **SYSLINUX**
-* **GRUB = KHÔNG TỒN TẠI**
-* **UEFI = CHƯA ĐƯỢC PHÉP**
-
----
-
-👉 Khi mày nói **“OK BIOS done”**,
-tao sẽ:
-
-* **chuyển sang UEFI GRUB**
-* **gộp BIOS + UEFI**
-* hoặc **iPXE + menu động theo MAC**
-
-Chọn hướng, tao triển tiếp.
