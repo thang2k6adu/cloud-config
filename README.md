@@ -169,6 +169,10 @@ sudo ufw allow 67/udp
 sudo ufw allow 68/udp
 sudo ufw allow 69/udp
 sudo ufw allow 80/tcp
+sudo ufw allow 2049/tcp
+sudo ufw allow 2049/udp
+sudo ufw allow 111/tcp
+sudo ufw allow 111/udp
 ```
 
 ```bash
