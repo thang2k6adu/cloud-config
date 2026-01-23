@@ -173,6 +173,8 @@ sudo ufw allow 2049/tcp
 sudo ufw allow 2049/udp
 sudo ufw allow 111/tcp
 sudo ufw allow 111/udp
+sudo ufw allow 20048/tcp
+sudo ufw allow 20048/udp
 ```
 
 ```bash
@@ -196,7 +198,15 @@ sudo wget https://releases.ubuntu.com/22.04/ubuntu-22.04.5-live-server-amd64.iso
 
 sudo apt update
 sudo apt install -y nfs-kernel-server
+
 ```
+sudo nano /etc/default/nfs-kernel-server
+
+RPCMOUNTDOPTS="--port 20048"
+
+sudo systemctl restart nfs-kernel-server
+ sudo systemctl status nfs-kernel-server
+
 
 Mount:
 
