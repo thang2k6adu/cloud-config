@@ -2,6 +2,8 @@
 
 ## 🎯 **HỖ TRỢ CẢ BIOS & UEFI (CHUNG 1 HỆ THỐNG)**
 
+before do this, remember to check your network with ip a, mask, gateway and replace all of them in my docs
+
 > Áp dụng cho:
 >
 > * Bare metal **CHƯA CÓ OS**
@@ -123,7 +125,7 @@ sudo systemctl restart dnsmasq
 ### 🔹 BIOS: pxelinux
 
 ```bash
-sudo apt install -y syslinux-common
+sudo apt install -y pxelinux syslinux-common
 sudo mkdir -p /srv/tftp/pxelinux.cfg
 sudo cp /usr/lib/PXELINUX/pxelinux.0 /srv/tftp/
 sudo cp /usr/lib/syslinux/modules/bios/ldlinux.c32 /srv/tftp/
@@ -136,16 +138,24 @@ sudo cp /usr/lib/syslinux/modules/bios/ldlinux.c32 /srv/tftp/
 ```bash
 sudo apt install -y grub-efi-amd64-bin
 sudo mkdir -p /srv/tftp/grub
-sudo cp /usr/lib/grub/x86_64-efi/grubx64.efi /srv/tftp/
+sudo cp /usr/lib/grub/x86_64-efi/monolithic/grubx64.efi /srv/tftp/
+```
+
+```bash
+sudo chown -R nobody:nogroup /srv/tftp
+sudo chmod -R 755 /srv/tftp
 ```
 
 ---
 
-### 🔍 Test TFTP
+### 🔍 Test TFTP (OPEN port below this, end of this file before do this)
 
 ```bash
-tftp 192.168.115.129 -c get grubx64.efi
-tftp 192.168.115.129 -c get pxelinux.0
+sudo apt install tftp
+tftp 192.168.115.129
+get grubx64.efi
+tftp 192.168.115.129
+get pxelinux.0
 ```
 
 ---
@@ -157,7 +167,7 @@ tftp 192.168.115.129 -c get pxelinux.0
 ```bash
 sudo mkdir -p /srv/http/ubuntu
 cd /srv/http/ubuntu
-sudo curl -LO https://releases.ubuntu.com/22.04/ubuntu-22.04.5-live-server-amd64.iso
+sudo wget https://releases.ubuntu.com/22.04/ubuntu-22.04.5-live-server-amd64.iso
 ```
 
 Mount:
@@ -174,6 +184,8 @@ sudo mkdir -p /srv/tftp/ubuntu
 sudo cp /mnt/iso/casper/vmlinuz /srv/tftp/ubuntu/
 sudo cp /mnt/iso/casper/initrd /srv/tftp/ubuntu/
 sudo umount /mnt/iso
+
+ls -lh /srv/tftp/ubuntu/
 ```
 
 ---
@@ -263,6 +275,10 @@ sudo mkdir -p /srv/http/autoinstall
 
 ### meta-data
 
+```bash
+sudo nano /srv/http/autoinstall/meta-data
+```
+
 ```yaml
 instance-id: node-01
 local-hostname: node-01
@@ -270,8 +286,11 @@ local-hostname: node-01
 
 ### user-data
 
+```bash
+sudo nano /srv/http/autoinstall/user-data
+```
+
 ```yaml
-#cloud-config
 #cloud-config
 autoinstall:
   version: 1
@@ -284,8 +303,6 @@ autoinstall:
   identity:
     hostname: node-1
     username: thang2k6adu
-    # Just for testing, dont use psw for production
-    password: "$6$Ai8vNu3WEm3UefYI$a4z1rRgp06uOcaHukfwNS8T.w5xkJw2UVLoF2/oOdKiC2nwswBtHv72eyBAx6Jejd1zyJ.lgUqycX8/qhQP101"
 
   ssh:
     install-server: true
@@ -355,7 +372,6 @@ autoinstall:
     - curtin in-target -- sed -i '/swap/d' /etc/fstab
     - curtin in-target -- bash -c "echo 'vm.swappiness=0' > /etc/sysctl.d/99-k8s.conf"
     - curtin in-target -- sysctl --system
-
 ```
 
 ---
