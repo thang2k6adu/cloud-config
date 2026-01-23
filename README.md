@@ -25,7 +25,7 @@ ip a
 Xác nhận:
 
 * NIC: `ens33`
-* IP: `192.168.115.129/24`
+* IP: `192.168.0.103/24`
 
 ⚠️ **Nếu NIC khác → phải sửa TOÀN BỘ config theo NIC đó**
 
@@ -91,7 +91,7 @@ dhcp-authoritative
 
 # Gateway + DNS
 dhcp-option=3,192.168.115.1
-dhcp-option=6,192.168.115.129
+dhcp-option=6,192.168.0.103
 
 # Domain nội bộ
 dhcp-option=15,lab.local
@@ -152,9 +152,9 @@ sudo chmod -R 755 /srv/tftp
 
 ```bash
 sudo apt install tftp
-tftp 192.168.115.129
+tftp 192.168.0.103
 get grubx64.efi
-tftp 192.168.115.129
+tftp 192.168.0.103
 get pxelinux.0
 ```
 
@@ -206,11 +206,8 @@ TIMEOUT 30
 LABEL install
   KERNEL ubuntu/vmlinuz
   INITRD ubuntu/initrd
-  APPEND ip=dhcp \
-         boot=casper \
-         url=http://192.168.115.129/ubuntu/ubuntu-22.04.5-live-server-amd64.iso \
-         autoinstall \
-         ds=nocloud-net;s=http://192.168.115.129/autoinstall/ ---
+  APPEND ip=dhcp boot=casper url=http://192.168.0.103/ubuntu/ubuntu-22.04.5-live-server-amd64.iso autoinstall ds=nocloud-net;s=http://192.168.0.103/autoinstall/ ---
+
 ```
 
 ---
@@ -222,17 +219,14 @@ sudo nano /srv/tftp/grub/grub.cfg
 ```
 
 ```cfg
-set timeout=5
+set timeout=30
 set default=0
 
 menuentry "Install Ubuntu Server (PXE Autoinstall)" {
-    linux /ubuntu/vmlinuz ip=dhcp \
-        boot=casper \
-        url=http://192.168.115.129/ubuntu/ubuntu-22.04.5-live-server-amd64.iso \
-        autoinstall \
-        ds=nocloud-net;s=http://192.168.115.129/autoinstall/ ---
+    linux /ubuntu/vmlinuz ip=dhcp boot=casper url=http://192.168.0.103/ubuntu/ubuntu-22.04.5-live-server-amd64.iso autoinstall ds=nocloud-net;s=http://192.168.0.103/autoinstall/ ---
     initrd /ubuntu/initrd
 }
+
 ```
 
 ---
@@ -264,7 +258,7 @@ sudo systemctl restart nginx
 Test:
 
 ```bash
-curl http://192.168.115.129/ubuntu/
+curl http://192.168.0.103/ubuntu/
 ```
 
 ---
@@ -428,7 +422,7 @@ Nếu dùng vmware máy ảo, nhớ bật hết bridge lên, nếu ko sẽ ko br
 
 timeout, tắt đi bật lại, chờ lâu
 
-## Can't open /dev/sr0: No medium found
+## Can't open /dev/sr0: No medium found, ko mount được iso, fall back về /dev
 
 boot=casper \ thêm cái này vào bên trên (pxelinux.cfg/default, grub) (đã thêm)
 
@@ -437,4 +431,6 @@ check url ubuntu và auto install trong:
 - /srv/tftp/pxelinux.cfg/default
 
 phải đúng với ip a
+
+thêm + APPEND ip=dhcp rd.neednet=1 \
 
