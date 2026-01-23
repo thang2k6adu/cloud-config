@@ -432,4 +432,9 @@ timeout, tắt đi bật lại, chờ lâu
 
 boot=casper \ thêm cái này vào bên trên (pxelinux.cfg/default, grub) (đã thêm)
 
+check url ubuntu và auto install trong:
+- /srv/tftp/grub/grub.cfg
+- /srv/tftp/pxelinux.cfg/default
+
+phải đúng với ip a
 
