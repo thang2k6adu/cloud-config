@@ -2,6 +2,12 @@
 autoinstall:
   version: 1
 
+  # disable interact
+  interactive-sections: []
+
+  # auto reboot when successfully install
+  shutdown: reboot
+
   locale: en_US.UTF-8
   keyboard:
     layout: us
@@ -48,19 +54,18 @@ autoinstall:
     - |
       curtin in-target -- bash -c '
       MY_IP=$(hostname -I | awk "{print \$1}")
-      # Cắt lấy số cuối cùng (Octet thứ 4)
       MY_ID=$(echo $MY_IP | awk -F. "{print \$4}")
       NEW_HOSTNAME="node-$MY_ID"
 
-      echo "--> Detected IP: $MY_IP. Renaming to: $NEW_HOSTNAME"
+      echo "--> Setup Hostname: $NEW_HOSTNAME (IP: $MY_IP)"
 
-      # Ghi vào /etc/hostname
       echo "$NEW_HOSTNAME" > /etc/hostname
-      # Sửa trong /etc/hosts (Thay localhost bằng tên mới để tránh lỗi sudo)
-      sed -i "s/localhost/$NEW_HOSTNAME/g" /etc/hosts
-      # Cập nhật ngay lập tức (cho session hiện tại nếu cần)
-      hostnamectl set-hostname $NEW_HOSTNAME || true
+      hostnamectl set-hostname $NEW_HOSTNAME
+
+      sed -i "/127.0.1.1/d" /etc/hosts
+      sed -i "/127.0.0.1/a 127.0.1.1 $NEW_HOSTNAME" /etc/hosts
       '
+
     # Enable services
     - curtin in-target -- systemctl enable ssh.service
     - curtin in-target -- systemctl enable ufw
@@ -90,6 +95,9 @@ autoinstall:
     - curtin in-target -- sed -i 's/^findtime.*/findtime = 600/' /etc/fail2ban/jail.local
     - curtin in-target -- sed -i 's/^maxretry.*/maxretry = 3/' /etc/fail2ban/jail.local
     - curtin in-target -- bash -c "printf '[sshd]\nenabled = true\nport = 8022\n' > /etc/fail2ban/jail.d/sshd.local"
+    - curtin in-target -- systemctl restart fail2ban
+    - curtin in-target -- cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
+    - curtin in-target -- bash -c "printf '[sshd]\nenabled = true\nbackend = systemd\nport = 8022\nmaxretry = 3\nbantime = 3600\n' > /etc/fail2ban/jail.d/sshd.local"
     - curtin in-target -- systemctl restart fail2ban
 
     - curtin in-target -- swapoff -a
