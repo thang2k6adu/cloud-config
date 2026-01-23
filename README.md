@@ -314,8 +314,6 @@ sudo nano /srv/http/autoinstall/meta-data
 ```
 
 ```yaml
-instance-id: node-01
-local-hostname: node-01
 ```
 
 ### user-data
@@ -329,14 +327,22 @@ sudo nano /srv/http/autoinstall/user-data
 #cloud-config
 autoinstall:
   version: 1
+
+  # disable interact
+  interactive-sections: []
+
+  # auto reboot when successfully install
+  shutdown: reboot
+
   locale: en_US.UTF-8
   keyboard:
     layout: us
     variant: ""
 
   identity:
-    hostname: node-1
+    hostname: localhost
     username: thang2k6adu
+    password: "$6$3KSEmEFffX6Gb5oH$4VL.PXtoT1bjs3UAwHmtaGRCByvzqn2PG3hoJ71.EeXC7KHdqSaOEN9No54uLcBPVSsOWptDc39WY3DmeftCi1"
 
   ssh:
     install-server: true
@@ -371,14 +377,34 @@ autoinstall:
     - ca-certificates
 
   late-commands:
+    - |
+      curtin in-target -- bash -c '
+      MY_IP=$(hostname -I | awk "{print \$1}")
+      MY_ID=$(echo $MY_IP | awk -F. "{print \$4}")
+      NEW_HOSTNAME="node-$MY_ID"
+
+      echo "--> Setup Hostname: $NEW_HOSTNAME (IP: $MY_IP)"
+
+      echo "$NEW_HOSTNAME" > /etc/hostname
+      hostnamectl set-hostname $NEW_HOSTNAME
+
+      sed -i "/127.0.1.1/d" /etc/hosts
+      sed -i "/127.0.0.1/a 127.0.1.1 $NEW_HOSTNAME" /etc/hosts
+      '
+
+    # Enable services
     - curtin in-target -- systemctl enable ssh.service
     - curtin in-target -- systemctl enable ufw
     - curtin in-target -- systemctl enable fail2ban
     - curtin in-target -- systemctl enable chrony
+
+    # Firewall basic rules
     - curtin in-target -- ufw default deny incoming
     - curtin in-target -- ufw default allow outgoing
     - curtin in-target -- ufw allow 8022/tcp
     - curtin in-target -- ufw --force enable
+
+    # SSH hardening
     - curtin in-target -- sed -i 's/^#\?Port .*/Port 8022/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
@@ -386,13 +412,20 @@ autoinstall:
     - curtin in-target -- sed -i 's/^#MaxAuthTries.*/MaxAuthTries 3/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#ClientAliveInterval.*/ClientAliveInterval 300/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#ClientAliveCountMax.*/ClientAliveCountMax 2/' /etc/ssh/sshd_config
+
     - curtin in-target -- systemctl restart ssh.service
+
+    # Fail2ban basic config
     - curtin in-target -- cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
     - curtin in-target -- sed -i 's/^bantime.*/bantime = 3600/' /etc/fail2ban/jail.local
     - curtin in-target -- sed -i 's/^findtime.*/findtime = 600/' /etc/fail2ban/jail.local
     - curtin in-target -- sed -i 's/^maxretry.*/maxretry = 3/' /etc/fail2ban/jail.local
     - curtin in-target -- bash -c "printf '[sshd]\nenabled = true\nport = 8022\n' > /etc/fail2ban/jail.d/sshd.local"
     - curtin in-target -- systemctl restart fail2ban
+    - curtin in-target -- cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
+    - curtin in-target -- bash -c "printf '[sshd]\nenabled = true\nbackend = systemd\nport = 8022\nmaxretry = 3\nbantime = 3600\n' > /etc/fail2ban/jail.d/sshd.local"
+    - curtin in-target -- systemctl restart fail2ban
+
     - curtin in-target -- swapoff -a
     - curtin in-target -- sed -i '/swap/d' /etc/fstab
     - curtin in-target -- bash -c "echo 'vm.swappiness=0' > /etc/sysctl.d/99-k8s.conf"
