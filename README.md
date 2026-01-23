@@ -499,3 +499,18 @@ Giải pháp:
   ```
 
 ---
+
+QUản lý node
+
+sudo nano /etc/systemd/resolved.conf
+
+[Resolve]
+DNS=127.0.0.1
+Domains=lab.local
+
+sudo systemctl restart systemd-resolved
+resolvectl status
+
+ping node-109
+ping node-109.lab.local
+ping google.com
