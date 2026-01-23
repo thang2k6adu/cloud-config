@@ -97,9 +97,11 @@ expand-hosts
 enable-tftp
 tftp-root=/srv/tftp
 
-# EFI x86_64
-dhcp-match=set:efi64,option:client-arch,7
-dhcp-boot=tag:efi64,grubx64.efi
+dhcp-match=set:bios,option:client-arch,0
+dhcp-match=set:uefi,option:client-arch,7
+
+dhcp-boot=tag:bios,pxelinux.
+dhcp-boot=tag:uefi,grubx64.efi
 ```
 
 Test & restart:
@@ -401,28 +403,3 @@ tftp 192.168.115.129 -c get grubx64.efi
 
 ---
 
-interface=ens33
-bind-interfaces
-
-dhcp-range=192.168.115.50,192.168.115.100,12h
-dhcp-authoritative
-
-dhcp-option=3,192.168.115.1
-dhcp-option=6,192.168.115.129
-dhcp-option=15,lab.local
-
-enable-tftp
-tftp-root=/srv/tftp
-
-# Nhận diện loại firmware
-dhcp-match=set:bios,option:client-arch,0
-dhcp-match=set:uefi,option:client-arch,7
-
-# BIOS → pxelinux
-dhcp-boot=tag:bios,pxelinux.0
-
-# UEFI → GRUB
-dhcp-boot=tag:uefi,grubx64.efi
-
-pxe-service=tag:bios,x86PC,"Install Ubuntu (BIOS PXE)",pxelinux.0
-pxe-service=tag:uefi,UEFI,"Install Ubuntu (UEFI PXE)",grubx64.efi
