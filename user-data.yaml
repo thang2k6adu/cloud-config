@@ -10,8 +10,6 @@ autoinstall:
   identity:
     hostname: node-1
     username: thang2k6adu
-    # Just for testing, dont use psw for production
-    password: "$6$Ai8vNu3WEm3UefYI$a4z1rRgp06uOcaHukfwNS8T.w5xkJw2UVLoF2/oOdKiC2nwswBtHv72eyBAx6Jejd1zyJ.lgUqycX8/qhQP101"
 
   ssh:
     install-server: true
