@@ -1,8 +1,8 @@
 # 🧱 PXE BOOT + AUTOINSTALL UBUNTU SERVER
 
-## 🎯 **HỖ TRỢ CẢ BIOS & UEFI (CHUNG 1 HỆ THỐNG)**
+## 🎯 HỖ TRỢ CẢ BIOS & UEFI (CHUNG 1 HỆ THỐNG)
 
-before do this, remember to check your network with ip a, mask, gateway and replace all of them in my docs
+Before do this, remember to check your network with `ip a`, mask, gateway and replace all of them in my docs., nhớ set ip tĩnh sau khi cài server
 
 > Áp dụng cho:
 >
@@ -86,11 +86,11 @@ interface=ens33
 bind-interfaces
 
 # DHCP range
-dhcp-range=192.168.115.50,192.168.115.100,12h
+dhcp-range=192.168.0.50,192.168.0.100,12h
 dhcp-authoritative
 
 # Gateway + DNS
-dhcp-option=3,192.168.115.1
+dhcp-option=3,192.168.0.1
 dhcp-option=6,192.168.0.103
 
 # Domain nội bộ
@@ -116,7 +116,12 @@ Test & restart:
 ```bash
 sudo dnsmasq --test
 sudo systemctl restart dnsmasq
+sudo systemctl status dnsmasq
+journalctl -u dnsmasq -f
 ```
+
+đến đây có thể bị lỗi do /srv/tftp chưa tạo nên dnsmasq lỗi là bình thườn
+típ nhe
 
 ---
 
@@ -145,10 +150,26 @@ sudo cp /usr/lib/grub/x86_64-efi/monolithic/grubx64.efi /srv/tftp/
 sudo chown -R nobody:nogroup /srv/tftp
 sudo chmod -R 755 /srv/tftp
 ```
+check 
+```bash
+sudo dnsmasq --test
+sudo systemctl restart dnsmasq
+sudo systemctl status dnsmasq
+journalctl -u dnsmasq -f
+```
 
 ---
 
-### 🔍 Test TFTP (OPEN port below this, end of this file before do this)
+### 🔍 Test TFTP
+
+(OPEN port below this, end of this file before do this)
+
+```bash
+sudo ufw allow 67/udp
+sudo ufw allow 68/udp
+sudo ufw allow 69/udp
+sudo ufw allow 80/tcp
+```
 
 ```bash
 sudo apt install tftp
@@ -162,30 +183,45 @@ get pxelinux.0
 
 ## IV️⃣ PHASE 3 — KERNEL + INITRD
 
-### 3️⃣ Chuẩn bị ISO qua HTTP (TỰ TẢI)
+### 3️⃣ Chuẩn bị ISO qua HTTP (TỰ TẢI) NFS ROOT FILESYSTEM
 
 ```bash
 sudo mkdir -p /srv/http/ubuntu
 cd /srv/http/ubuntu
 sudo wget https://releases.ubuntu.com/22.04/ubuntu-22.04.5-live-server-amd64.iso
+
+sudo apt update
+sudo apt install -y nfs-kernel-server
 ```
 
 Mount:
 
 ```bash
-sudo mkdir -p /mnt/iso
-sudo mount -o loop /srv/http/ubuntu/ubuntu-22.04.5-live-server-amd64.iso /mnt/iso
+sudo mkdir -p /srv/nfs/ubuntu
+sudo mount -o loop /srv/http/ubuntu/ubuntu-22.04.5-live-server-amd64.iso /mnt
+sudo cp -a /mnt/. /srv/nfs/ubuntu/
+sudo umount /mnt
 ```
 
-Copy kernel:
+### 3️⃣ Copy kernel + initrd
 
 ```bash
 sudo mkdir -p /srv/tftp/ubuntu
-sudo cp /mnt/iso/casper/vmlinuz /srv/tftp/ubuntu/
-sudo cp /mnt/iso/casper/initrd /srv/tftp/ubuntu/
-sudo umount /mnt/iso
+sudo cp /srv/nfs/ubuntu/casper/vmlinuz /srv/tftp/ubuntu/
+sudo cp /srv/nfs/ubuntu/casper/initrd /srv/tftp/ubuntu/
+```
 
-ls -lh /srv/tftp/ubuntu/
+```bash
+sudo nano /etc/exports
+```
+
+```conf
+/srv/nfs/ubuntu *(ro,sync,no_subtree_check)
+```
+
+```bash
+sudo exportfs -a
+sudo systemctl restart nfs-kernel-server
 ```
 
 ---
@@ -193,6 +229,8 @@ ls -lh /srv/tftp/ubuntu/
 ## V️⃣ PHASE 4 — BOOT MENU (KERNEL CMDLINE = NÃO)
 
 ### 🔹 BIOS — pxelinux
+
+(config **ko được xuống dòng**)
 
 ```bash
 sudo nano /srv/tftp/pxelinux.cfg/default
@@ -206,8 +244,7 @@ TIMEOUT 30
 LABEL install
   KERNEL ubuntu/vmlinuz
   INITRD ubuntu/initrd
-  APPEND ip=dhcp boot=casper url=http://192.168.0.103/ubuntu/ubuntu-22.04.5-live-server-amd64.iso autoinstall ds=nocloud-net;s=http://192.168.0.103/autoinstall/ ---
-
+  APPEND ip=dhcp boot=casper netboot=nfs nfsroot=192.168.0.103:/srv/nfs/ubuntu autoinstall ignore_uuid fsck.mode=skip ds=nocloud-net;s=http://192.168.0.103/autoinstall/ ---
 ```
 
 ---
@@ -222,11 +259,10 @@ sudo nano /srv/tftp/grub/grub.cfg
 set timeout=30
 set default=0
 
-menuentry "Install Ubuntu Server (PXE Autoinstall)" {
-    linux /ubuntu/vmlinuz ip=dhcp boot=casper url=http://192.168.0.103/ubuntu/ubuntu-22.04.5-live-server-amd64.iso autoinstall ds=nocloud-net;s=http://192.168.0.103/autoinstall/ ---
+menuentry "Install Ubuntu Server (NFS Boot - Low RAM)" {
+    linux /ubuntu/vmlinuz ip=dhcp boot=casper netboot=nfs nfsroot=192.168.0.103:/srv/nfs/ubuntu autoinstall ignore_uuid fsck.mode=skip ds=nocloud-net\;s=http://192.168.0.103/autoinstall/
     initrd /ubuntu/initrd
 }
-
 ```
 
 ---
@@ -290,7 +326,6 @@ sudo nano /srv/http/autoinstall/user-data
 #cloud-config
 autoinstall:
   version: 1
-
   locale: en_US.UTF-8
   keyboard:
     layout: us
@@ -333,19 +368,14 @@ autoinstall:
     - ca-certificates
 
   late-commands:
-    # Enable services
     - curtin in-target -- systemctl enable ssh.service
     - curtin in-target -- systemctl enable ufw
     - curtin in-target -- systemctl enable fail2ban
     - curtin in-target -- systemctl enable chrony
-
-    # Firewall basic rules
     - curtin in-target -- ufw default deny incoming
     - curtin in-target -- ufw default allow outgoing
     - curtin in-target -- ufw allow 8022/tcp
     - curtin in-target -- ufw --force enable
-
-    # SSH hardening
     - curtin in-target -- sed -i 's/^#\?Port .*/Port 8022/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
@@ -353,17 +383,13 @@ autoinstall:
     - curtin in-target -- sed -i 's/^#MaxAuthTries.*/MaxAuthTries 3/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#ClientAliveInterval.*/ClientAliveInterval 300/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#ClientAliveCountMax.*/ClientAliveCountMax 2/' /etc/ssh/sshd_config
-
     - curtin in-target -- systemctl restart ssh.service
-
-    # Fail2ban basic config
     - curtin in-target -- cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
     - curtin in-target -- sed -i 's/^bantime.*/bantime = 3600/' /etc/fail2ban/jail.local
     - curtin in-target -- sed -i 's/^findtime.*/findtime = 600/' /etc/fail2ban/jail.local
     - curtin in-target -- sed -i 's/^maxretry.*/maxretry = 3/' /etc/fail2ban/jail.local
     - curtin in-target -- bash -c "printf '[sshd]\nenabled = true\nport = 8022\n' > /etc/fail2ban/jail.d/sshd.local"
     - curtin in-target -- systemctl restart fail2ban
-
     - curtin in-target -- swapoff -a
     - curtin in-target -- sed -i '/swap/d' /etc/fstab
     - curtin in-target -- bash -c "echo 'vm.swappiness=0' > /etc/sysctl.d/99-k8s.conf"
@@ -375,8 +401,8 @@ autoinstall:
 ## VIII️⃣ PHASE 7 — DHCP RESERVATION (KHUYẾN NGHỊ)
 
 ```conf
-dhcp-host=AA:BB:CC:DD:EE:01,node-01,192.168.115.11
-dhcp-host=AA:BB:CC:DD:EE:02,node-02,192.168.115.12
+dhcp-host=AA:BB:CC:DD:EE:01,node-01,192.168.0.11
+dhcp-host=AA:BB:CC:DD:EE:02,node-02,192.168.0.12
 ```
 
 ---
@@ -400,37 +426,40 @@ cat /proc/cmdline
 * PXE sạch → debug theo tầng
 * Không có hack, không có shortcut
 
-sudo ufw allow 67/udp
-sudo ufw allow 68/udp
-sudo ufw allow 69/udp
-sudo ufw allow 80/tcp
+### ERR PXE-E51: No DHCP or proxyDHCP offers were received
 
-## ERR PXE-E51: No DHCP or proxyDHCP offers were received
-
-Lỗi này là do config **dnsmasq**.  
+Lỗi này là do config **dnsmasq**.
 Xem kỹ `ip a`, đối chiếu với config file của dnsmasq (`pxe.conf`).
 
 Các điểm cần kiểm tra:
-- IP interface
-- Gateway
-- DNS
-- DHCP range
 
-Nếu dùng vmware máy ảo, nhớ bật hết bridge lên, nếu ko sẽ ko broadcast được
+* IP interface
+* Gateway
+* DNS
+* DHCP range
 
-## ERR PXE-EA0: Network boot canceled by keystroke
+Nếu dùng vmware máy ảo, nhớ bật hết bridge lên, nếu ko sẽ ko broadcast được.
 
-timeout, tắt đi bật lại, chờ lâu
+### ERR PXE-EA0: Network boot canceled by keystroke
 
-## Can't open /dev/sr0: No medium found, ko mount được iso, fall back về /dev
+Timeout, tắt đi bật lại, chờ lâu.
 
-boot=casper \ thêm cái này vào bên trên (pxelinux.cfg/default, grub) (đã thêm)
+### Can't open /dev/sr0: No medium found
 
-check url ubuntu và auto install trong:
-- /srv/tftp/grub/grub.cfg
-- /srv/tftp/pxelinux.cfg/default
+Không mount được iso, fall back về `/dev`.
 
-phải đúng với ip a
+Giải pháp:
 
-thêm + APPEND ip=dhcp rd.neednet=1 \
+* `boot=casper` (đã thêm)
+* Check URL ubuntu và autoinstall trong:
 
+  * `/srv/tftp/grub/grub.cfg`
+  * `/srv/tftp/pxelinux.cfg/default`
+* Phải đúng với `ip a`
+* Thêm:
+
+  ```
+  APPEND ip=dhcp rd.neednet=1
+  ```
+
+---
