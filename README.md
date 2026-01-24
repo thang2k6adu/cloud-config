@@ -514,3 +514,5 @@ resolvectl status
 ping node-109
 ping node-109.lab.local
 ping google.com
+
+genisoimage -output cidata.iso -volid cidata -joliet -rock meta-data user-data
