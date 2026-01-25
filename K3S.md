@@ -395,20 +395,42 @@ NAME            STATUS   ROLES    AGE
 192.168.0.106   Ready    worker   1d
 ```
 
----
+# 🚀 CÀI HELM + KUBERNETES DASHBOARD
 
-cài helm
+## 1️⃣ Cài Helm
+
+```bash
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 helm version
+```
 
+---
+
+## 2️⃣ Cài Kubernetes Dashboard
+
+```bash
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
+```
 
-check
+Check:
+
+```bash
 kubectl get pods -n kubernetes-dashboard
+```
 
-tạo ServiceAccount (tài khoản cho service)
+---
+
+## 3️⃣ Tạo ServiceAccount (tài khoản cho service)
+
+Tạo file:
+
+```bash
 nano ~/k3s-inventory/dashboard-admin.yaml
+```
 
+Nội dung:
+
+```yaml
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -427,27 +449,296 @@ subjects:
 - kind: ServiceAccount
   name: kubernetes-dashboard-admin
   namespace: kubernetes-dashboard
+```
 
+Apply:
+
+```bash
 kubectl apply -f ~/k3s-inventory/dashboard-admin.yaml
+```
 
-check
+Check service:
+
+```bash
 kubectl get svc -n kubernetes-dashboard
+```
 
+---
 
+## 4️⃣ Mở proxy để truy cập Dashboard
+
+```bash
 kubectl proxy --address=0.0.0.0 --accept-hosts='^.*$'
+```
 
-nếu ko mở proxy tại port 8001 thì phải vào 6443 (chắc chắn ko vào được)
+Nếu không mở proxy tại port `8001` thì phải vào `6443` (chắc chắn không vào được).
 
+Truy cập Dashboard:
+
+```
 http://192.168.0.104:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/
+```
 
-“API Server, hãy forward request này tới Service kubernetes-dashboard, port tên là https (443), nó là port”
+Giải thích:
 
-lấy token (để dùng mỗi lần login)
+> “API Server, hãy forward request này tới Service kubernetes-dashboard, port tên là https (443), nó là port”
+
+---
+
+## 5️⃣ Lấy token để login Dashboard
+
+```bash
 kubectl -n kubernetes-dashboard create token kubernetes-dashboard-admin
+```
 
-<!-- Nếu ssh thì tạm mở port 8001 -->
+---
+
+## 6️⃣ Nếu SSH thì tạm mở port 8001
+
+```bash
 sudo ufw allow 8001
 sudo ufw reload
+```
 
+Sau khi dùng xong thì đóng lại:
+
+```bash
 sudo ufw delete allow 8001
 sudo ufw reload
+```
+Tất cả pod ở node nào?
+kubectl get pods -A -o wide
+
+---
+
+
+test deploy nginx + node port
+
+kubectl create namespace test-nginx
+
+<!-- Lệnh này tạo deployment trên node bất kì (schedule tự chọn tối ưu) -->
+kubectl create deployment nginx \
+  --image=nginx \
+  -n test-nginx
+
+check
+kubectl get pods -n test-nginx
+
+
+expose
+
+<!-- Này giống tạo 1 service port 80, node port bất kì trỏ về nginx
+nó sẽ mở port của tất cả các node
+
+yaml phải type node port, ko là nó về ClusterIP
+ -->
+kubectl expose deployment nginx \
+  --type=NodePort \
+  --port=80 \
+  -n test-nginx
+
+check
+kubectl get svc -n test-nginx
+
+nginx   NodePort   10.43.7.190   <none>        80:30582/TCP   11s
+
+vào
+http://192.168.0.105:30582
+
+scale thử
+
+kubectl scale deployment -n test-nginx nginx --replicas=3
+kubectl get pods -n test-nginx -o wide
+
+
+rollback
+kubectl delete namespace test-nginx
+
+setup ingress (ko cần nodeport nữa)
+
+ghét traefik nên disable đi
+
+sudo nano /etc/rancher/k3s/config.yaml
+
+disable:
+  - traefik
+
+sudo systemctl restart k3s
+
+check
+kubectl get pods -n kube-system
+
+cài nginx
+
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+
+kubectl create namespace ingress-nginx
+
+cái này cho reverse proxy, còn cloud có LB sẵn nên là khác
+
+mkdir -p ~/k3s-inventory/nginx-ingress-config
+nano ~/k3s-inventory/nginx-ingress-config/values.yaml
+
+controller:
+  replicaCount: 2
+
+  ingressClassResource:
+    enabled: true
+    default: true
+    name: nginx
+
+  kind: Deployment
+
+  service:
+    enabled: true
+    type: NodePort
+    externalTrafficPolicy: Local
+    ports:
+      http: 80
+      https: 443
+    nodePorts:
+      http: 30080
+      https: 30443
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 60
+
+  config:
+    use-forwarded-headers: "true"
+    proxy-real-ip-cidr: "0.0.0.0/0"
+    real-ip-header: "X-Forwarded-For"
+    proxy-body-size: "50m"
+    proxy-read-timeout: "600"
+    proxy-send-timeout: "600"
+    worker-shutdown-timeout: "240s"
+    enable-underscores-in-headers: "true"
+
+  allowSnippetAnnotations: false
+
+  metrics:
+    enabled: true
+    service:
+      enabled: true
+    serviceMonitor:
+      enabled: true
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values:
+                  - controller
+          topologyKey: kubernetes.io/hostname
+
+  terminationGracePeriodSeconds: 300
+
+  lifecycle:
+    preStop:
+      exec:
+        command:
+          - /wait-shutdown
+
+defaultBackend:
+  enabled: true
+
+
+helm install ingress-nginx ingress-nginx/ingress-nginx \
+  -n ingress-nginx \
+  -f ~/k3s-inventory/nginx-ingress-config/values.yaml
+
+check
+kubectl get pods -n ingress-nginx
+kubectl get svc -n ingress-nginx
+
+làm lại như cũ, khác là service lúc này là Cluster IP chứ ko dùng node port
+
+kubectl create namespace test-nginx
+
+kubectl create deployment nginx \
+  --image=nginx \
+  -n test-nginx
+
+khác nè (không ghi type thì là ClusterIP), ko name thì cùng tên với deployment
+ko định nghĩa target port thì tự lấy trong deployment
+
+kubectl expose deployment nginx \
+  --port=80 \
+  --target-port=80 \
+  -n test-nginx
+
+kubectl get svc -n test-nginx
+
+mkdir ~/k8s-manifest
+nano ~/k8s-manifest/nginx-ingress.yaml
+
+prefix sẽ match với tất cả
+
+http://nginx.local/
+http://nginx.local/abc
+http://nginx.local/api
+http://nginx.local/test/123
+
+đều vào nginx hết
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-ingress
+  namespace: test-nginx
+spec:
+  rules:
+  - host: nginx.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nginx
+            port:
+              number: 80
+
+kubectl apply -f ~/k8s-manifest/nginx-ingress.yaml
+
+check
+
+kubectl get ingress -n test-nginx
+
+map domain vào dns ở host
+
+Ví dụ window, còn linux khá dễ thôi
+
+chạy power shell bằng admin
+
+notepad C:\Windows\System32\drivers\etc\hosts
+
+flush dns (xóa cache)
+ipconfig /flushdns
+
+ping thử phát
+ping nginx.local
+
+sudo ufw allow 80
+sudo ufw allow 443
+
+
+
+vào
+http://nginx.local
+
