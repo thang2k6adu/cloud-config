@@ -341,7 +341,7 @@ nano ~/k3s-inventory/install-k3s-worker.yml
 - hosts: workers
   become: yes
   vars:
-    k3s_url: "https://192.168.0.104:6443"
+    k3s_url: "https://192.168.0.10:6443"
     k3s_token: "K1028f433ac447753d1b7936476a06b90846c8d7d8ff9d3b54232c88638075cdb87::server:ed9d1a2aa018911c52cf9f100e36a157"
 
   tasks:
@@ -355,6 +355,41 @@ Run:
 ```bash
 ansible-playbook -i ~/k3s-inventory/hosts.ini ~/k3s-inventory/install-k3s-worker.yml
 ```
+uninstall nếu lỗi
+nano ~/k3s-inventory/uninstall-k3s-worker.yml
+
+- hosts: workers
+  become: yes
+
+  tasks:
+    - name: Stop k3s-agent service
+      systemd:
+        name: k3s-agent
+        state: stopped
+        enabled: false
+      ignore_errors: yes
+
+    - name: Run k3s-agent uninstall script
+      shell: |
+        if [ -f /usr/local/bin/k3s-agent-uninstall.sh ]; then
+          /usr/local/bin/k3s-agent-uninstall.sh
+        fi
+      args:
+        warn: false
+      ignore_errors: yes
+
+    - name: Remove k3s directories
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/rancher/k3s
+        - /var/lib/rancher/k3s
+        - /var/lib/kubelet
+      ignore_errors: yes
+
+
+ansible-playbook -i ~/k3s-inventory/hosts.ini ~/k3s-inventory/uninstall-k3s-worker.yml
 
 ---
 
@@ -568,12 +603,27 @@ sudo systemctl restart k3s
 check
 kubectl get pods -n kube-system
 
+trước khi cài nginx, cài monitoring
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+
+kubectl create namespace monitoring
+
+helm install monitoring prometheus-community/kube-prometheus-stack \
+  -n monitoring
+
+check
+kubectl get pods -n monitoring
+
+prometheus-...
+grafana-...
+alertmanager-...
+node-exporter-...
+
 cài nginx
 
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm repo update
-
-kubectl create namespace ingress-nginx
 
 cái này cho reverse proxy, còn cloud có LB sẵn nên là khác
 
@@ -637,14 +687,16 @@ controller:
 
   affinity:
     podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchExpressions:
-              - key: app.kubernetes.io/component
-                operator: In
-                values:
-                  - controller
-          topologyKey: kubernetes.io/hostname
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/component
+                  operator: In
+                  values:
+                    - controller
+            topologyKey: kubernetes.io/hostname
 
   terminationGracePeriodSeconds: 300
 
@@ -657,10 +709,14 @@ controller:
 defaultBackend:
   enabled: true
 
-
+kubectl create namespace ingress-nginx
 helm install ingress-nginx ingress-nginx/ingress-nginx \
   -n ingress-nginx \
   -f ~/k3s-inventory/nginx-ingress-config/values.yaml
+
+nếu lỗi
+helm uninstall ingress-nginx -n ingress-nginx
+kubectl delete namespace ingress-nginx
 
 check
 kubectl get pods -n ingress-nginx
