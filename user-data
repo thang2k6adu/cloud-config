@@ -1,43 +1,52 @@
 #cloud-config
 autoinstall:
-  version: 1
+  version: 1 # Version autoinstall của Ubuntu
 
-  # disable interact
+  # Không cho hỏi tương tác khi cài đặt
   interactive-sections: []
 
-  # auto reboot when successfully install
+  # Cài xong thì reboot
   shutdown: reboot
 
+  # Locale hệ thống
   locale: en_US.UTF-8
+
+  # Layout bàn phím
   keyboard:
     layout: us
     variant: ""
 
+  # Tạo user mặc định
   identity:
-    hostname: localhost
-    username: thang2k6adu
-    password: "$6$3KSEmEFffX6Gb5oH$4VL.PXtoT1bjs3UAwHmtaGRCByvzqn2PG3hoJ71.EeXC7KHdqSaOEN9No54uLcBPVSsOWptDc39WY3DmeftCi1"
+    hostname: localhost # Hostname tạm, sẽ đổi ở late-commands
+    username: thang2k6adu # User được tạo
+    password: "$6$3KSEmEFffX6Gb5oH$..." # Password đã hash SHA-512
 
+  # Cấu hình SSH
   ssh:
-    install-server: true
-    allow-pw: false
-    authorized-keys:
+    install-server: true # Cài openssh-server
+    allow-pw: false # Không cho login bằng password
+    authorized-keys: # Public key cho user
       - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPrDNYZt+doMzqGwcElOycPaHKoMmZ9743pAVw9Q29KC thang2k6adu@gmail.com
 
+  # Cấu hình mạng
   network:
     version: 2
     ethernets:
       default:
         match:
-          name: "e*"
-        dhcp4: true
+          name: "e*" # Match các card mạng: eth0, ens33, enp0s3...
+        dhcp4: true # Lấy IP bằng DHCP
 
+  # Layout ổ đĩa
   storage:
     layout:
-      name: lvm
+      name: lvm # Dùng LVM mặc định
 
+  # Timezone
   timezone: Asia/Ho_Chi_Minh
 
+  # Danh sách package cài sẵn
   packages:
     - curl
     - wget
@@ -50,7 +59,9 @@ autoinstall:
     - chrony
     - ca-certificates
 
+  # Các lệnh chạy sau khi OS cài xong
   late-commands:
+    # Tự động set hostname theo IP cuối (vd: 192.168.0.15 -> k8s-worker-15)
     - |
       curtin in-target -- bash -c "
       MY_IP=\$(ip route get 8.8.8.8 | awk '{print \$7; exit}')
@@ -66,13 +77,13 @@ autoinstall:
       sed -i \"/127.0.0.1/a 127.0.1.1 \$NEW_HOSTNAME\" /etc/hosts
       "
 
-    # Enable services
+    # Enable các service khi boot
     - curtin in-target -- systemctl enable ssh.service
     - curtin in-target -- systemctl enable ufw
     - curtin in-target -- systemctl enable fail2ban
     - curtin in-target -- systemctl enable chrony
 
-    # SSH hardening
+    # Hardening SSH
     - curtin in-target -- sed -i 's/^#\?Port .*/Port 8022/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
@@ -82,13 +93,13 @@ autoinstall:
     - curtin in-target -- sed -i 's/^#ClientAliveCountMax.*/ClientAliveCountMax 2/' /etc/ssh/sshd_config
     - curtin in-target -- systemctl restart ssh.service
 
-    # Firewall basic rules
+    # Firewall UFW cơ bản
     - curtin in-target -- ufw default deny incoming
     - curtin in-target -- ufw default allow outgoing
     - curtin in-target -- ufw allow 8022/tcp
     - curtin in-target -- ufw --force enable
 
-    # Fail2ban basic config
+    # Fail2ban config chống brute-force SSH
     - curtin in-target -- cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
     - curtin in-target -- sed -i 's/^bantime.*/bantime = 3600/' /etc/fail2ban/jail.local
     - curtin in-target -- sed -i 's/^findtime.*/findtime = 600/' /etc/fail2ban/jail.local
@@ -96,10 +107,14 @@ autoinstall:
     - curtin in-target -- bash -c "printf '[sshd]\nenabled = true\nbackend = systemd\nport = 8022\nmaxretry = 3\nbantime = 3600\n' > /etc/fail2ban/jail.d/sshd.local"
     - curtin in-target -- systemctl restart fail2ban
 
+    # Cho user sudo không cần password
     - curtin in-target -- bash -c "echo 'thang2k6adu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/thang2k6adu"
     - curtin in-target -- chmod 0440 /etc/sudoers.d/thang2k6adu
 
+    # Tắt swap (bắt buộc cho Kubernetes)
     - curtin in-target -- swapoff -a
     - curtin in-target -- sed -i '/swap/d' /etc/fstab
+
+    # Sysctl cho Kubernetes networking
     - curtin in-target -- bash -c "echo -e 'vm.swappiness=0\nnet.bridge.bridge-nf-call-iptables=1\nnet.ipv4.ip_forward=1' > /etc/sysctl.d/99-k8s.conf"
     - curtin in-target -- sysctl --system

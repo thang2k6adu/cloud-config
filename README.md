@@ -25,7 +25,7 @@ ip a
 Xác nhận:
 
 * NIC: `ens33`
-* IP: `192.168.0.103/24`
+* IP: `192.168.0.30/24`
 
 ⚠️ **Nếu NIC khác → phải sửa TOÀN BỘ config theo NIC đó**
 
@@ -91,7 +91,7 @@ dhcp-authoritative
 
 # Gateway + DNS
 dhcp-option=3,192.168.0.1
-dhcp-option=6,192.168.0.103
+dhcp-option=6,192.168.0.30
 
 # Domain nội bộ
 dhcp-option=15,lab.local
@@ -174,9 +174,9 @@ sudo ufw allow from 192.168.0.0/24
 
 ```bash
 sudo apt install tftp
-tftp 192.168.0.103
+tftp 192.168.0.30
 get grubx64.efi
-tftp 192.168.0.103
+tftp 192.168.0.30
 get pxelinux.0
 ```
 
@@ -246,7 +246,7 @@ TIMEOUT 30
 LABEL install
   KERNEL ubuntu/vmlinuz
   INITRD ubuntu/initrd
-  APPEND ip=dhcp boot=casper netboot=nfs nfsroot=192.168.0.103:/srv/nfs/ubuntu autoinstall ignore_uuid fsck.mode=skip ds=nocloud-net;s=http://192.168.0.103/autoinstall/ ---
+  APPEND ip=dhcp boot=casper netboot=nfs nfsroot=192.168.0.30:/srv/nfs/ubuntu autoinstall ignore_uuid fsck.mode=skip ds=nocloud-net;s=http://192.168.0.30/autoinstall/ ---
 ```
 
 ---
@@ -262,7 +262,7 @@ set timeout=30
 set default=0
 
 menuentry "Install Ubuntu Server (NFS Boot - Low RAM)" {
-    linux /ubuntu/vmlinuz ip=dhcp boot=casper netboot=nfs nfsroot=192.168.0.103:/srv/nfs/ubuntu autoinstall ignore_uuid fsck.mode=skip ds=nocloud-net\;s=http://192.168.0.103/autoinstall/
+    linux /ubuntu/vmlinuz ip=dhcp boot=casper netboot=nfs nfsroot=192.168.0.30:/srv/nfs/ubuntu autoinstall ignore_uuid fsck.mode=skip ds=nocloud-net\;s=http://192.168.0.30/autoinstall/
     initrd /ubuntu/initrd
 }
 ```
@@ -296,7 +296,7 @@ sudo systemctl restart nginx
 Test:
 
 ```bash
-curl http://192.168.0.103/ubuntu/
+curl http://192.168.0.30/ubuntu/
 ```
 
 ---
@@ -326,44 +326,53 @@ sudo nano /srv/http/autoinstall/user-data
 ```yaml
 #cloud-config
 autoinstall:
-  version: 1
+  version: 1   # Version autoinstall của Ubuntu
 
-  # disable interact
+  # Không cho hỏi tương tác khi cài đặt
   interactive-sections: []
 
-  # auto reboot when successfully install
+  # Cài xong thì reboot
   shutdown: reboot
 
+  # Locale hệ thống
   locale: en_US.UTF-8
+
+  # Layout bàn phím
   keyboard:
     layout: us
     variant: ""
 
+  # Tạo user mặc định
   identity:
-    hostname: localhost
-    username: thang2k6adu
-    password: "$6$3KSEmEFffX6Gb5oH$4VL.PXtoT1bjs3UAwHmtaGRCByvzqn2PG3hoJ71.EeXC7KHdqSaOEN9No54uLcBPVSsOWptDc39WY3DmeftCi1"
+    hostname: localhost           # Hostname tạm, sẽ đổi ở late-commands
+    username: thang2k6adu         # User được tạo
+    password: "$6$3KSEmEFffX6Gb5oH$..."   # Password đã hash SHA-512
 
+  # Cấu hình SSH
   ssh:
-    install-server: true
-    allow-pw: false
-    authorized-keys:
+    install-server: true          # Cài openssh-server
+    allow-pw: false               # Không cho login bằng password
+    authorized-keys:              # Public key cho user
       - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPrDNYZt+doMzqGwcElOycPaHKoMmZ9743pAVw9Q29KC thang2k6adu@gmail.com
 
+  # Cấu hình mạng
   network:
     version: 2
     ethernets:
       default:
         match:
-          name: "e*"
-        dhcp4: true
+          name: "e*"              # Match các card mạng: eth0, ens33, enp0s3...
+        dhcp4: true               # Lấy IP bằng DHCP
 
+  # Layout ổ đĩa
   storage:
     layout:
-      name: lvm
+      name: lvm                   # Dùng LVM mặc định
 
+  # Timezone
   timezone: Asia/Ho_Chi_Minh
 
+  # Danh sách package cài sẵn
   packages:
     - curl
     - wget
@@ -376,35 +385,32 @@ autoinstall:
     - chrony
     - ca-certificates
 
+  # Các lệnh chạy sau khi OS cài xong
   late-commands:
+
+    # Tự động set hostname theo IP cuối (vd: 192.168.0.15 -> k8s-worker-15)
     - |
-      curtin in-target -- bash -c '
-      MY_IP=$(hostname -I | awk "{print \$1}")
-      MY_ID=$(echo $MY_IP | awk -F. "{print \$4}")
-      NEW_HOSTNAME="node-$MY_ID"
+      curtin in-target -- bash -c "
+      MY_IP=\$(ip route get 8.8.8.8 | awk '{print \$7; exit}')
+      MY_ID=\${MY_IP##*.}
+      NEW_HOSTNAME=\"k8s-worker-\$MY_ID\"
 
-      echo "--> Setup Hostname: $NEW_HOSTNAME (IP: $MY_IP)"
+      echo \"--> Setup Hostname: \$NEW_HOSTNAME (IP: \$MY_IP)\"
 
-      echo "$NEW_HOSTNAME" > /etc/hostname
-      hostnamectl set-hostname $NEW_HOSTNAME
+      echo \"\$NEW_HOSTNAME\" > /etc/hostname
+      hostnamectl set-hostname \$NEW_HOSTNAME
 
-      sed -i "/127.0.1.1/d" /etc/hosts
-      sed -i "/127.0.0.1/a 127.0.1.1 $NEW_HOSTNAME" /etc/hosts
-      '
+      sed -i \"/127.0.1.1/d\" /etc/hosts
+      sed -i \"/127.0.0.1/a 127.0.1.1 \$NEW_HOSTNAME\" /etc/hosts
+      "
 
-    # Enable services
+    # Enable các service khi boot
     - curtin in-target -- systemctl enable ssh.service
     - curtin in-target -- systemctl enable ufw
     - curtin in-target -- systemctl enable fail2ban
     - curtin in-target -- systemctl enable chrony
 
-    # Firewall basic rules
-    - curtin in-target -- ufw default deny incoming
-    - curtin in-target -- ufw default allow outgoing
-    - curtin in-target -- ufw allow 8022/tcp
-    - curtin in-target -- ufw --force enable
-
-    # SSH hardening
+    # Hardening SSH
     - curtin in-target -- sed -i 's/^#\?Port .*/Port 8022/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
@@ -412,24 +418,34 @@ autoinstall:
     - curtin in-target -- sed -i 's/^#MaxAuthTries.*/MaxAuthTries 3/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#ClientAliveInterval.*/ClientAliveInterval 300/' /etc/ssh/sshd_config
     - curtin in-target -- sed -i 's/^#ClientAliveCountMax.*/ClientAliveCountMax 2/' /etc/ssh/sshd_config
-
     - curtin in-target -- systemctl restart ssh.service
 
-    # Fail2ban basic config
+    # Firewall UFW cơ bản
+    - curtin in-target -- ufw default deny incoming
+    - curtin in-target -- ufw default allow outgoing
+    - curtin in-target -- ufw allow 8022/tcp
+    - curtin in-target -- ufw --force enable
+
+    # Fail2ban config chống brute-force SSH
     - curtin in-target -- cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
     - curtin in-target -- sed -i 's/^bantime.*/bantime = 3600/' /etc/fail2ban/jail.local
     - curtin in-target -- sed -i 's/^findtime.*/findtime = 600/' /etc/fail2ban/jail.local
     - curtin in-target -- sed -i 's/^maxretry.*/maxretry = 3/' /etc/fail2ban/jail.local
-    - curtin in-target -- bash -c "printf '[sshd]\nenabled = true\nport = 8022\n' > /etc/fail2ban/jail.d/sshd.local"
-    - curtin in-target -- systemctl restart fail2ban
-    - curtin in-target -- cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
     - curtin in-target -- bash -c "printf '[sshd]\nenabled = true\nbackend = systemd\nport = 8022\nmaxretry = 3\nbantime = 3600\n' > /etc/fail2ban/jail.d/sshd.local"
     - curtin in-target -- systemctl restart fail2ban
 
+    # Cho user sudo không cần password
+    - curtin in-target -- bash -c "echo 'thang2k6adu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/thang2k6adu"
+    - curtin in-target -- chmod 0440 /etc/sudoers.d/thang2k6adu
+
+    # Tắt swap (bắt buộc cho Kubernetes)
     - curtin in-target -- swapoff -a
     - curtin in-target -- sed -i '/swap/d' /etc/fstab
-    - curtin in-target -- bash -c "echo 'vm.swappiness=0' > /etc/sysctl.d/99-k8s.conf"
+
+    # Sysctl cho Kubernetes networking
+    - curtin in-target -- bash -c "echo -e 'vm.swappiness=0\nnet.bridge.bridge-nf-call-iptables=1\nnet.ipv4.ip_forward=1' > /etc/sysctl.d/99-k8s.conf"
     - curtin in-target -- sysctl --system
+
 ```
 
 ---
