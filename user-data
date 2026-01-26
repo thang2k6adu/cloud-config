@@ -66,7 +66,7 @@ autoinstall:
       curtin in-target -- bash -c "
       MY_IP=\$(ip route get 8.8.8.8 | awk '{print \$7; exit}')
       MY_ID=\${MY_IP##*.}
-      NEW_HOSTNAME=\"k8s-worker-\$MY_ID\"
+      NEW_HOSTNAME=\"k3s-worker-\$MY_ID\"
 
       echo \"--> Setup Hostname: \$NEW_HOSTNAME (IP: \$MY_IP)\"
 

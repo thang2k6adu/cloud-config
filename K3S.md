@@ -1,10 +1,8 @@
 # 🚀 HƯỚNG DẪN TRIỂN KHAI K3S CLUSTER (MASTER + WORKER)
 
----
-
 ## BƯỚC 1: ĐỔI HOSTNAME (TRÊN NODE MASTER)
 
-> Nhớ dùng `ip a` để check **IP / mask / gateway** và thay cho đúng trước khi làm bất cứ điều gì.
+Nhớ dùng `ip a` để check **IP / mask / gateway** và thay cho đúng trước khi làm bất cứ điều gì.
 ```bash
 sudo hostnamectl set-hostname k3s-master
 sudo nano /etc/hosts
@@ -20,8 +18,6 @@ Reboot:
 ```bash
 sudo reboot
 ```
-
----
 
 ## BƯỚC 2: SET IP TĨNH + DISABLE CLOUD-INIT (MASTER)
 
@@ -72,8 +68,6 @@ Check IP:
 ip a
 ```
 
----
-
 ## BƯỚC 3: SCAN IP CÁC SERVER WORKER (TRÊN MASTER)
 
 Cài `nmap`:
@@ -83,8 +77,7 @@ sudo apt install nmap -y
 
 Auto generate inventory file
 
-> ⚠️ Nhớ sửa subnet + port SSH cho đúng môi trường
-> sau này thêm server thì nhớ chạy lại cái này là oke
+⚠️ Nhớ sửa subnet + port SSH cho đúng môi trường. Sau này thêm server thì nhớ chạy lại cái này là oke.
 ```bash
 SUBNET=192.168.0.0/24
 PORT=8022
@@ -120,8 +113,6 @@ Kết quả mong đợi:
 192.168.0.106 ansible_user=thang2k6adu ansible_port=8022 worker_ip=192.168.0.106
 ```
 
----
-
 ## BƯỚC 4: CÀI K3S CONTROL PLANE (MASTER)
 
 Đặt tên node là `k3s-master`:
@@ -135,8 +126,6 @@ Check:
 ```bash
 kubectl get nodes
 ```
-
----
 
 ## BƯỚC 5: MỞ FIREWALL (UFW)
 
@@ -153,8 +142,6 @@ sudo ufw allow 8472/udp
 sudo ufw allow 10250/tcp
 ```
 
----
-
 ## CÀI ANSIBLE TRÊN MASTER
 ```bash
 sudo apt update
@@ -163,26 +150,31 @@ sudo apt install ansible -y
 
 Lưu ý phải lắp ssh vào master node trước khi ssh
 
-window
+Windows:
+```bash
 type ~/.ssh/id_ed25519
+```
 
-linux
+Linux:
+```bash
 cat ~/.ssh/id_ed25519
+```
 
-vào server tạo ssh private để ssh vào các node, paste cái bên trên vào
-
+Vào server tạo ssh private để ssh vào các node, paste cái bên trên vào:
+```bash
 nano ~/.ssh/id_ed25519
+```
 
-phân quyền owner
+Phân quyền owner:
+```bash
 chmod 700 /home/thang2k6adu/.ssh
 chmod 600 /home/thang2k6adu/.ssh/id_ed25519
+```
 
 Test kết nối:
 ```bash
 ansible all -i ~/k3s-inventory/hosts.ini -m ping
 ```
-
----
 
 ## SET SUDO KHÔNG PASSWORD (CHO WORKER)
 
@@ -209,8 +201,6 @@ Run:
 ansible-playbook -i ~/k3s-inventory/hosts.ini ~/k3s-inventory/setup-sudo.yml -K
 ```
 
----
-
 ## SET IP TĨNH CHO WORKER (OPTIONAL)
 ```bash
 nano ~/k3s-inventory/set-static-ip.yml
@@ -219,8 +209,6 @@ nano ~/k3s-inventory/set-static-ip.yml
 - hosts: workers
   become: yes
   vars:
-    # Các worker sẽ bắt đầu từ 11
-    start_host: 11
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -248,7 +236,7 @@ nano ~/k3s-inventory/set-static-ip.yml
               {{ ansible_default_ipv4.interface }}:
                 dhcp4: no
                 addresses:
-                  - {{ ansible_default_ipv4.network | ipaddr(start_host + play_hosts.index(inventory_hostname)) }}/{{ ansible_default_ipv4.address | ipaddr('prefix') }}
+                  - {{ hostvars[inventory_hostname].worker_ip }}/24
                 gateway4: {{ ansible_default_ipv4.gateway }}
                 nameservers:
                   addresses:
@@ -258,6 +246,8 @@ nano ~/k3s-inventory/set-static-ip.yml
 
     - name: Apply netplan
       command: netplan apply
+      async: 10
+      poll: 0
 ```
 
 Run:
@@ -271,8 +261,6 @@ ansible workers -i ~/k3s-inventory/hosts.ini -m shell -a \
 "echo '=== HOST:' \$(hostname) && ip a | grep inet && ip route | grep default && ping -c 2 8.8.8.8"
 ```
 
----
-
 ## LẤY TOKEN TỪ MASTER
 ```bash
 sudo cat /var/lib/rancher/k3s/server/node-token
@@ -282,8 +270,6 @@ Ví dụ:
 ```
 K10a3f9c8c7b2a3b7f9::server:xxxxxxxx
 ```
-
----
 
 ## MỞ FIREWALL CHO WORKER (ANSIBLE)
 ```bash
@@ -315,8 +301,6 @@ Run:
 ansible-playbook -i ~/k3s-inventory/hosts.ini ~/k3s-inventory/open-ufw-worker.yml
 ```
 
----
-
 ## CÀI K3S AGENT (WORKER)
 ```bash
 nano ~/k3s-inventory/install-k3s-worker.yml
@@ -326,7 +310,7 @@ nano ~/k3s-inventory/install-k3s-worker.yml
   become: yes
   vars:
     k3s_url: "https://192.168.0.10:6443"
-    k3s_token: "K1028f433ac447753d1b7936476a06b90846c8d7d8ff9d3b54232c88638075cdb87::server:ed9d1a2aa018911c52cf9f100e36a157"
+    k3s_token: "K1053ef82a41ac462a03f87dc5182f22c7fa633ea8b35367340a7d4dcfd6231e2ef::server:1e99a2069d586655d94c286f4a475192"
 
   tasks:
     - name: Install k3s agent
@@ -378,8 +362,6 @@ nano ~/k3s-inventory/uninstall-k3s-worker.yml
 ansible-playbook -i ~/k3s-inventory/hosts.ini ~/k3s-inventory/uninstall-k3s-worker.yml
 ```
 
----
-
 ## CHECK NODE ĐÃ JOIN
 ```bash
 kubectl get nodes -o wide
@@ -392,8 +374,6 @@ k3s-master   Ready    control-plane   192.168.0.10
 worker1      Ready    <none>          192.168.0.105
 worker2      Ready    <none>          192.168.0.106
 ```
-
----
 
 ## SET ROLE CHO WORKER
 ```bash
@@ -412,8 +392,6 @@ NAME            STATUS   ROLES    AGE
 192.168.0.106   Ready    worker   1d
 ```
 
----
-
 # 🚀 CÀI HELM + KUBERNETES DASHBOARD
 
 ## 1️⃣ Cài Helm
@@ -421,8 +399,6 @@ NAME            STATUS   ROLES    AGE
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 helm version
 ```
-
----
 
 ## 2️⃣ Cài Kubernetes Dashboard
 ```bash
@@ -433,8 +409,6 @@ Check:
 ```bash
 kubectl get pods -n kubernetes-dashboard
 ```
-
----
 
 ## 3️⃣ Tạo ServiceAccount (tài khoản cho service)
 
@@ -475,10 +449,9 @@ Check service:
 kubectl get svc -n kubernetes-dashboard
 ```
 
----
-
 ## 4️⃣ Mở proxy để truy cập Dashboard
 ```bash
+sudo ufw allow 8001
 kubectl proxy --address=0.0.0.0 --accept-hosts='^.*$'
 ```
 
@@ -493,14 +466,10 @@ Giải thích:
 
 > "API Server, hãy forward request này tới Service kubernetes-dashboard, port tên là https (443), nó là port"
 
----
-
 ## 5️⃣ Lấy token để login Dashboard
 ```bash
 kubectl -n kubernetes-dashboard create token kubernetes-dashboard-admin
 ```
-
----
 
 ## 6️⃣ Nếu SSH thì tạm mở port 8001
 ```bash
@@ -518,8 +487,6 @@ Tất cả pod ở node nào?
 ```bash
 kubectl get pods -A -o wide
 ```
-
----
 
 ## TEST DEPLOY NGINX + NODE PORT
 ```bash
@@ -576,8 +543,6 @@ kubectl get pods -n test-nginx -o wide
 kubectl delete namespace test-nginx
 ```
 
----
-
 ## SETUP INGRESS (KHÔNG CẦN NODEPORT NỮA)
 
 Ghét traefik nên disable đi:
@@ -597,6 +562,13 @@ sudo systemctl restart k3s
 Check:
 ```bash
 kubectl get pods -n kube-system
+```
+
+Config kube:
+```bash
+mkdir -p ~/.kube
+sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+sudo chown $USER:$USER ~/.kube/config
 ```
 
 ### Trước khi cài nginx, cài monitoring
@@ -733,7 +705,7 @@ kubectl delete namespace ingress-nginx
 
 Check:
 ```bash
-kubectl get pods -n ingress-nginx
+kubectl get pods -n ingress-nginx -o wide
 kubectl get svc -n ingress-nginx
 ```
 
@@ -806,6 +778,13 @@ Chạy PowerShell bằng admin:
 ```powershell
 notepad C:\Windows\System32\drivers\etc\hosts
 ```
+
+Thêm vào:
+```
+192.168.0.105 nginx.local
+```
+
+(Lưu ý là chỉ node nào có pod mới được)
 
 Flush DNS (xóa cache):
 ```powershell
