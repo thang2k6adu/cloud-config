@@ -750,7 +750,7 @@ metadata:
   namespace: test-nginx
 spec:
   rules:
-  - host: nginx.local
+  - host: thang2k6adu.xyz
     http:
       paths:
       - path: /

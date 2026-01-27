@@ -1,14 +1,25 @@
-Internet
+CLIENT (trình duyệt)
    |
-[VPS public IP]
+   |  http://domain (80)  hoặc  https://domain (443)
+   v
+[VPS Public IP + Nginx + Certbot]
    |
-[WireGuard VPN: 10.10.10.1]
+   |  proxy_pass qua WireGuard VPN
+   v
+[WireGuard tunnel 10.10.10.0/24]
    |
-----------------------------
-|   |   |   |   |   |   |
-N1  N2  N3  ...        N10
-10.10.10.11 → 10.10.10.20
-(LAN nodes)
+   v
+[NodePort Ingress NGINX trên các node K3s]
+   |   (30080 cho HTTP, 30443 cho HTTPS)
+   |
+   v
+[Ingress Controller]
+   |
+   v
+[Service trong cluster]
+   |
+   v
+[Pod (app, dashboard, v.v.)]
 
 
 trên master
@@ -383,6 +394,8 @@ lấy domain trỏ về vps (tự tìm hiểu)
 
 rồi sửa lại
 
+sudo nano /etc/nginx/conf.d/k3s-ingress.conf
+
 upstream ingress_http {
     least_conn;
     server 10.10.10.11:30080;
@@ -431,8 +444,184 @@ listen 443 ssl;
 ssl_certificate /etc/letsencrypt/live/thang2k6adu.com/fullchain.pem;
 ssl_certificate_key /etc/letsencrypt/live/thang2k6adu.com/privkey.pem;
 
+giờ sửa lại (trên master)
+ansible-inventory -i ~/k3s-inventory/hosts.ini --list \
+| jq -r '
+._meta.hostvars
+| to_entries[]
+| select(.value.ansible_user=="thang2k6adu")
+| "    server \(.value.vpn_ip):30443;"
+'
+echo "}
+"
+
+phải ra
+    server 10.10.10.11:30443;
+    server 10.10.10.13:30443;
+    server 10.10.10.12:30443;
+
+lên vps sửa lại
+
+sudo nano /etc/nginx/conf.d/k3s-ingress.conf
+
+nhớ sửa cả
+location / {
+    proxy_pass https://ingress_http;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    proxy_ssl_server_name on;
+}
+
+phải là 
+upstream ingress_http {
+    least_conn;
+
+    server 10.10.10.11:30443;
+    server 10.10.10.12:30443;
+    server 10.10.10.13:30443;
+}
+
+server {
+    listen 443 ssl;
+    server_name thang2k6adu.xyz www.thang2k6adu.xyz;
+
+    ssl_certificate     /etc/letsencrypt/live/thang2k6adu.xyz/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/thang2k6adu.xyz/privkey.pem;
+    include             /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
+
+    location / {
+        proxy_pass https://ingress_http;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        proxy_ssl_server_name on;
+    }
+}
+
+server {
+    listen 80;
+    server_name thang2k6adu.xyz www.thang2k6adu.xyz;
+
+    if ($host = thang2k6adu.xyz) {
+        return 301 https://$host$request_uri;
+    }
+
+    if ($host = www.thang2k6adu.xyz) {
+        return 301 https://$host$request_uri;
+    }
+
+    return 404;
+}
+
+
+test
+sudo nginx -t
+sudo systemctl reload nginx
+
 test
 https://thang2k6adu.xyz
 
-bật auto renew
+check auto renew
 sudo certbot renew --dry-run
+
+tạo test ingress dashboard (master)
+thêm subdomain dashboard.thang2k6adu.xyz
+
+rồi lên vps chạy
+lệnh script thêm domain
+sudo nano /usr/local/bin/add-domain.sh
+
+#!/bin/bash
+
+DOMAIN=$1
+
+if [ -z "$DOMAIN" ]; then
+  echo "Usage: add-domain.sh domain.com"
+  exit 1
+fi
+
+CONF="/etc/nginx/conf.d/$DOMAIN.conf"
+
+cat > $CONF <<EOF
+server {
+    listen 80;
+    server_name $DOMAIN;
+
+    location / {
+        proxy_pass https://ingress_http;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_ssl_server_name on;
+    }
+}
+EOF
+
+nginx -t || exit 1
+systemctl reload nginx
+
+certbot --nginx -d $DOMAIN
+
+echo "DONE: https://$DOMAIN"
+
+
+sudo chmod +x /usr/local/bin/add-domain.sh
+
+dùng
+
+sudo add-domain.sh dashboard.thang2k6adu.xyz
+
+ (xin ssl cert)
+sudo certbot --nginx -d dashboard.thang2k6adu.xyz
+
+check
+sudo nano /etc/nginx/conf.d/dashboard.thang2k6adu.xyz.conf
+
+
+check
+sudo nano /etc/nginx/conf.d/k3s-ingress.conf
+
+
+nano ~/k8s-manifest/dashboard-ingress.yaml
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dashboard-ingress
+  namespace: kubernetes-dashboard
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "off"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: thang2k6adu.xyz
+    http:
+      paths:
+      - path: /dashboard(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: kubernetes-dashboard
+            port:
+              number: 443
+
+
+apply
+kubectl apply -f ~/k8s-manifest/dashboard-ingress.yaml
+
+check
+https://thang2k6adu.xyz/dashboard
+
+Client HTTPS
+ → VPS Nginx (443)
+ → proxy_pass tới node:30443
+ → Ingress NGINX (443)
+ → Service kubernetes-dashboard:443
+ → Pod dashboard
