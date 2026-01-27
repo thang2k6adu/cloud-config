@@ -1,3 +1,8 @@
+# Cấu Trúc Nginx Configuration
+
+## Cấu trúc thư mục
+
+```
 /etc/nginx/nginx.conf        (KHÔNG ĐỘNG)
 
 /etc/nginx/backends/
@@ -15,46 +20,82 @@
 
 /etc/nginx/sites-enabled/
     thang2k6adu.xyz -> ../sites-available/thang2k6adu.xyz
+```
 
+---
 
-trên vps nhé
-tạo backend list riêng
+## Setup trên VPS
+
+### 1. Tạo backend list riêng
+
+```bash
 sudo mkdir -p /etc/nginx/backends
 sudo nano /etc/nginx/backends/ingress.conf
+```
 
+**Nội dung `/etc/nginx/backends/ingress.conf`:**
+```nginx
 server 10.10.10.11:30443;
 server 10.10.10.12:30443;
 server 10.10.10.13:30443;
+```
 
-tạo upstream Global
+---
 
+### 2. Tạo upstream Global
+
+```bash
 sudo nano /etc/nginx/conf.d/ingress_upstream.conf
+```
 
+**Nội dung `/etc/nginx/conf.d/ingress_upstream.conf`:**
+```nginx
 upstream ingress_http {
     least_conn;
     include /etc/nginx/backends/ingress.conf;
 }
+```
 
-tạo security global
+---
 
+### 3. Tạo security global
+
+```bash
 sudo nano /etc/nginx/conf.d/security.conf
+```
 
+**Nội dung `/etc/nginx/conf.d/security.conf`:**
+```nginx
 server_tokens off;
 
 add_header X-Content-Type-Options nosniff always;
 add_header X-Frame-Options SAMEORIGIN always;
 add_header Referrer-Policy strict-origin-when-cross-origin always;
 add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+```
 
-rate limit
+---
 
+### 4. Rate limit
+
+```bash
 sudo nano /etc/nginx/conf.d/rate_limit.conf
+```
 
+**Nội dung `/etc/nginx/conf.d/rate_limit.conf`:**
+```nginx
 limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
+```
 
-tạo script add domain
+---
 
-1 domain phải như này
+## Tạo script add domain
+
+### Cấu hình domain mẫu
+
+1 domain phải như này:
+
+```nginx
 server {
     listen 80;
     server_name thang2k6adu.xyz www.thang2k6adu.xyz;
@@ -86,11 +127,19 @@ server {
         proxy_ssl_server_name on;
     }
 }
+```
 
+---
 
+### Tạo script
+
+```bash
 sudo nano /usr/local/bin/add-domain
 sudo chmod +x /usr/local/bin/add-domain
+```
 
+**Nội dung `/usr/local/bin/add-domain`:**
+```bash
 #!/bin/bash
 
 DOMAIN=$1
@@ -175,23 +224,36 @@ EOF
 
 nginx -t || exit 1
 systemctl reload nginx
+```
 
+---
 
-thêm domain
+## Các thao tác quản lý
 
+### Thêm domain
+
+```bash
 sudo add-domain dashboard.thang2k6adu.xyz
+```
 
-thêm node backend
+**Lưu ý:** thêm domain thì phải thêm www. nữa nhé
 
+---
+
+### Thêm node backend
+
+```bash
 echo "server 10.10.10.14:30443;" >> /etc/nginx/backends/ingress.conf
 nginx -t && systemctl reload nginx
+```
 
+---
 
-remove domain
+### Remove domain
 
+```bash
 sudo rm -f /etc/nginx/sites-enabled/dashboard.thang2k6adu.xyz
 sudo rm -f /etc/nginx/sites-available/dashboard.thang2k6adu.xyz
 sudo certbot delete --cert-name dashboard.thang2k6adu.xyz
 sudo nginx -t && sudo systemctl reload nginx
-
-thêm domain thì phải thêm www. nữa nhé
+```
