@@ -319,3 +319,120 @@ trên vps
 cài nginx
 sudo apt update
 sudo apt install nginx -y
+
+
+Lấy ip của tất cả các node (workers:master)
+
+cài jq
+sudo apt update
+sudo apt install -y jq
+
+lấy ip vpn
+ansible-inventory -i ~/k3s-inventory/hosts.ini --list \
+| jq -r '
+._meta.hostvars
+| to_entries[]
+| select(.value.ansible_user=="thang2k6adu")
+| "    server \(.value.vpn_ip):30080;"
+'
+echo "}
+"
+
+phải ra
+
+upstream ingress_http {
+    server 10.10.10.11:30080;
+    server 10.10.10.13:30080;
+    server 10.10.10.12:30080;
+}
+
+cấu hình nginx
+sudo nano /etc/nginx/conf.d/k3s-ingress.conf
+
+upstream ingress_http {
+    least_conn;
+    server 10.10.10.11:30080;
+    server 10.10.10.13:30080;
+    server 10.10.10.12:30080;
+}
+
+server {
+    listen 80;
+
+    location / {
+        proxy_pass http://ingress_http;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+
+test và reload
+sudo nginx -t
+sudo systemctl reload nginx
+
+
+test bên ngoài
+http://13.229.60.179
+
+phải ra welcome to nginx
+
+lắp domain
+
+lấy domain trỏ về vps (tự tìm hiểu)
+
+rồi sửa lại
+
+upstream ingress_http {
+    least_conn;
+    server 10.10.10.11:30080;
+    server 10.10.10.12:30080;
+    server 10.10.10.13:30080;
+}
+
+server {
+    listen 80;
+    server_name thang2k6adu.xyz www.thang2k6adu.xyz;
+
+    location / {
+        proxy_pass http://ingress_http;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+
+test + reload
+sudo nginx -t
+sudo systemctl reload nginx
+
+nhớ mở 80 443 trên vps
+
+test
+http://thang2k6adu.xyz
+
+bật https
+
+cài certbot
+
+sudo apt update
+sudo apt install certbot python3-certbot-nginx -y
+
+sudo certbot --nginx -d thang2k6adu.xyz -d www.thang2k6adu.xyz
+
+chọn email
+
+chọn
+redirect HTTP → HTTPS = YES
+
+CertBot tự sửa config thành
+
+listen 443 ssl;
+ssl_certificate /etc/letsencrypt/live/thang2k6adu.com/fullchain.pem;
+ssl_certificate_key /etc/letsencrypt/live/thang2k6adu.com/privkey.pem;
+
+test
+https://thang2k6adu.xyz
+
+bật auto renew
+sudo certbot renew --dry-run
