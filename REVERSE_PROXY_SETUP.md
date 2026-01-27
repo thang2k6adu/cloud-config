@@ -1,3 +1,8 @@
+# Hướng Dẫn Cài Đặt WireGuard VPN và Nginx Reverse Proxy cho K3s Cluster
+
+## Sơ Đồ Kiến Trúc
+
+```
 CLIENT (trình duyệt)
    |
    |  http://domain (80)  hoặc  https://domain (443)
@@ -20,12 +25,21 @@ CLIENT (trình duyệt)
    |
    v
 [Pod (app, dashboard, v.v.)]
+```
 
+---
 
-trên master
+## Phần 1: Cài Đặt WireGuard
 
+### 1.1. Cài đặt WireGuard trên tất cả server (trên master)
+
+**Tạo file playbook:**
+```bash
 nano ~/k3s-inventory/install-wireguard.yml
+```
 
+**Nội dung `install-wireguard.yml`:**
+```yaml
 - name: Install WireGuard on all servers
   hosts: all
   become: true
@@ -38,13 +52,24 @@ nano ~/k3s-inventory/install-wireguard.yml
       apt:
         name: wireguard
         state: present
-        
+```
+
+**Chạy playbook:**
+```bash
 ansible-playbook -i ~/k3s-inventory/hosts.ini ~/k3s-inventory/install-wireguard.yml
+```
 
-tạo key cho các máy
+---
 
+### 1.2. Tạo key cho các máy
+
+**Tạo file playbook:**
+```bash
 nano ~/k3s-inventory/gen-keys.yml
+```
 
+**Nội dung `gen-keys.yml`:**
+```yaml
 - name: Generate WireGuard keys
   hosts: all
   become: true
@@ -64,48 +89,70 @@ nano ~/k3s-inventory/gen-keys.yml
       shell: cat /etc/wireguard/privatekey | wg pubkey > /etc/wireguard/publickey
       args:
         creates: /etc/wireguard/publickey
+```
 
-
-chạy 
-
+**Chạy playbook:**
+```bash
 ansible-playbook -i ~/k3s-inventory/hosts.ini ~/k3s-inventory/gen-keys.yml
+```
 
-
-lấy public key của các máy
-
+**Lấy public key của các máy:**
+```bash
 ansible -i ~/k3s-inventory/hosts.ini all -b -m shell -a "cat /etc/wireguard/publickey"
+```
 
+**Check file hosts:**
+```bash
 cat ~/k3s-inventory/hosts.ini
+```
 
-cài wireguard trên vps
+---
 
+### 1.3. Cài WireGuard trên VPS
+
+**Cài đặt:**
+```bash
 sudo apt update
 sudo apt install wireguard -y
+```
 
-tạo key
+**Tạo key:**
+```bash
 sudo sh -c 'umask 077; wg genkey | tee /etc/wireguard/privatekey | wg pubkey > /etc/wireguard/publickey'
+```
 
-lấy public key và lưu vào
-
+**Lấy public key và lưu vào:**
+```bash
 sudo cat /etc/wireguard/publickey
+```
 
-vd JKL1bfmnfZfoS/QyQKIVW5mgENgNh4CyhlYi2ObqVUs=
+Ví dụ: `JKL1bfmnfZfoS/QyQKIVW5mgENgNh4CyhlYi2ObqVUs=`
 
-giờ vps và các node đều có pub và private key
+---
 
-mục tiêu
+### 1.4. Mục tiêu cấu hình
 
-VPS:
+**VPS:**
+```
 /etc/wireguard/wg0.conf  (chứa peer của tất cả node)
+```
 
-
-Mỗi node:
+**Mỗi node:**
+```
 /etc/wireguard/wg0.conf  (kết nối về VPS)
+```
 
-sửa hosts.ini
+---
 
+### 1.5. Cập nhật hosts.ini với thông tin VPN
+
+**Lấy IP master:**
+```bash
 MASTER=$(awk '/^\[master\]/{getline; print $1}' ~/k3s-inventory/hosts.ini)
+```
 
+**Tạo section [master]:**
+```bash
 ansible -i ~/k3s-inventory/hosts.ini master:workers -b -m shell -a "cat /etc/wireguard/publickey" --one-line \
 | awk -v master="$MASTER" '
 BEGIN{
@@ -124,7 +171,10 @@ END{
   print "\n[workers]"
 }
 ' > ~/k3s-inventory/hosts.tmp.ini
+```
 
+**Tạo section [workers]:**
+```bash
 ansible -i ~/k3s-inventory/hosts.ini master:workers -b -m shell -a "cat /etc/wireguard/publickey" --one-line \
 | awk -v master="$MASTER" '
 BEGIN{ vpn=12 }
@@ -136,35 +186,54 @@ BEGIN{ vpn=12 }
     vpn++
   }
 }' >> ~/k3s-inventory/hosts.tmp.ini
+```
 
+**Di chuyển file:**
+```bash
 mv ~/k3s-inventory/hosts.tmp.ini ~/k3s-inventory/hosts.ini
+```
 
-
-check 
+**Check kết quả:**
+```bash
 cat ~/k3s-inventory/hosts.ini
+```
 
-phải ra
+**Phải ra:**
+```ini
 [master]
 192.168.0.10 ansible_user=thang2k6adu ansible_port=8022 worker_ip=192.168.0.10 vpn_ip=10.10.10.11 wg_public_key=ui9LQVSQZOfQH5DzE1f/DtzPd2S6MFbOVTXqjgMPG1A=
 
 [workers]
 192.168.0.106 ansible_user=thang2k6adu ansible_port=8022 worker_ip=192.168.0.106 vpn_ip=10.10.10.12 wg_public_key=o7sRKClHG6qLHF9+2UTj8gtBcwK9zHZ6PEMdawADtGE=
 192.168.0.105 ansible_user=thang2k6adu ansible_port=8022 worker_ip=192.168.0.105 vpn_ip=10.10.10.13 wg_public_key=1Vd2nl5yookdxx2BEdDaMfmOHwpfY+IMSYyu7GdJ2FQ=
+```
 
-khai báo thông tin vps
+---
 
-sửa hosts.ini
+### 1.6. Khai báo thông tin VPS
 
+**Sửa hosts.ini:**
+```bash
 nano ~/k3s-inventory/hosts.ini
+```
 
-thêm (nhớ thay ip public, user và public key)
+**Thêm (nhớ thay ip public, user và public key):**
+```ini
 [vps]
 13.229.60.179 ansible_user=ubuntu vpn_ip=10.10.10.1 wg_public_key=JKL1bfmnfZfoS/QyQKIVW5mgENgNh4CyhlYi2ObqVUs=
+```
 
-tạo wg config 0 trên các node
+---
 
+### 1.7. Tạo wg0.conf trên các node
+
+**Tạo playbook:**
+```bash
 nano ~/k3s-inventory/gen-node-wg.yml
+```
 
+**Nội dung `gen-node-wg.yml`:**
+```yaml
 - name: Generate wg0.conf for nodes
   hosts: master:workers
   become: true
@@ -191,14 +260,20 @@ nano ~/k3s-inventory/gen-node-wg.yml
           Endpoint = {{ vps_ip }}:51820
           AllowedIPs = 10.10.10.0/24
           PersistentKeepalive = 25
+```
 
-run 
+**Chạy playbook:**
+```bash
 ansible-playbook -i ~/k3s-inventory/hosts.ini ~/k3s-inventory/gen-node-wg.yml
+```
 
-check thử 1 node (master)
+**Check thử 1 node (master):**
+```bash
 sudo cat /etc/wireguard/wg0.conf
+```
 
-phải ra
+**Phải ra:**
+```ini
 [Interface]
 Address = 10.10.10.11/24
 PrivateKey = 2MpNSUhR6Hb5VOPmwJPR4IE3M0FxB3Ib1QEARoJNnHY=
@@ -208,11 +283,19 @@ PublicKey = JKL1bfmnfZfoS/QyQKIVW5mgENgNh4CyhlYi2ObqVUs=
 Endpoint = 13.229.60.179:51820
 AllowedIPs = 10.10.10.0/24
 PersistentKeepalive = 25
+```
 
-GEN file wg0 cho vps
+---
 
+### 1.8. Gen file wg0 cho VPS
+
+**Tạo playbook:**
+```bash
 nano ~/k3s-inventory/gen-vps-wg.yml
+```
 
+**Nội dung `gen-vps-wg.yml`:**
+```yaml
 - name: Generate VPS wg0.conf
   hosts: localhost
   vars:
@@ -234,20 +317,34 @@ nano ~/k3s-inventory/gen-vps-wg.yml
           AllowedIPs = {{ hostvars[host].vpn_ip }}/32
 
           {% endfor %}
+```
 
+**Chạy playbook:**
+```bash
 ansible-playbook -i ~/k3s-inventory/hosts.ini ~/k3s-inventory/gen-vps-wg.yml
+```
 
+**Check:**
+```bash
+cat ~/k3s-inventory/wg0.vps.conf
+```
 
-check
+---
 
- cat ~/k3s-inventory/wg0.vps.conf
+### 1.9. Cấu hình wg0.conf trên VPS
 
-lên vps
-
+**Lên VPS, lấy private key:**
+```bash
 sudo cat /etc/wireguard/privatekey
+```
 
+**Tạo file config:**
+```bash
 sudo nano /etc/wireguard/wg0.conf
+```
 
+**Nội dung:**
+```ini
 [Interface]
 Address = 10.10.10.1/24
 ListenPort = 51820
@@ -264,30 +361,46 @@ AllowedIPs = 10.10.10.12/32
 [Peer]
 PublicKey = 1Vd2nl5yookdxx2BEdDaMfmOHwpfY+IMSYyu7GdJ2FQ=
 AllowedIPs = 10.10.10.13/32
+```
 
+---
 
-trên vps bật ip forward cho vpn
+### 1.10. Bật IP forward trên VPS
+
+```bash
 echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf
 sudo sysctl -p
+```
 
-mở port (EC2 thì lên trang) (51820 UDP)
+**Mở port (EC2 thì lên trang) (51820 UDP)**
 
-chạy
+---
 
+### 1.11. Khởi động WireGuard trên VPS
+
+```bash
 sudo systemctl enable wg-quick@wg0
 sudo systemctl start wg-quick@wg0
 sudo systemctl status wg-quick@wg0
+```
 
-check
-
+**Check:**
+```bash
 sudo wg
 ip a show wg0
+```
 
+---
 
-trên LAN master
+### 1.12. Khởi động WireGuard trên các node (trên LAN master)
 
+**Tạo playbook:**
+```bash
 nano ~/k3s-inventory/start-wireguard.yml
+```
 
+**Nội dung `start-wireguard.yml`:**
+```yaml
 - name: Start WireGuard on all hosts
   hosts: master:workers
   become: true
@@ -317,28 +430,41 @@ nano ~/k3s-inventory/start-wireguard.yml
     - name: Print ip status
       debug:
         msg: "{{ ip_status.stdout }}"
+```
 
-
-chạy
+**Chạy:**
+```bash
 ansible-playbook -i ~/k3s-inventory/hosts.ini ~/k3s-inventory/start-wireguard.yml
+```
 
-test trên node (nào cũng được), nếu fail hãy mở port vps
+**Test trên node (nào cũng được), nếu fail hãy mở port vps:**
+```bash
 ping 10.10.10.1
+```
 
-trên vps
+---
 
-cài nginx
+## Phần 2: Cấu Hình Nginx Reverse Proxy trên VPS
+
+### 2.1. Cài đặt Nginx
+
+```bash
 sudo apt update
 sudo apt install nginx -y
+```
 
+---
 
-Lấy ip của tất cả các node (workers:master)
+### 2.2. Lấy IP của tất cả các node (workers:master)
 
-cài jq
+**Cài jq:**
+```bash
 sudo apt update
 sudo apt install -y jq
+```
 
-lấy ip vpn
+**Lấy IP VPN:**
+```bash
 ansible-inventory -i ~/k3s-inventory/hosts.ini --list \
 | jq -r '
 ._meta.hostvars
@@ -348,18 +474,27 @@ ansible-inventory -i ~/k3s-inventory/hosts.ini --list \
 '
 echo "}
 "
+```
 
-phải ra
-
+**Phải ra:**
+```nginx
 upstream ingress_http {
     server 10.10.10.11:30080;
     server 10.10.10.13:30080;
     server 10.10.10.12:30080;
 }
+```
 
-cấu hình nginx
+---
+
+### 2.3. Cấu hình Nginx
+
+```bash
 sudo nano /etc/nginx/conf.d/k3s-ingress.conf
+```
 
+**Nội dung:**
+```nginx
 upstream ingress_http {
     least_conn;
     server 10.10.10.11:30080;
@@ -377,25 +512,39 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }
+```
 
-test và reload
+**Test và reload:**
+```bash
 sudo nginx -t
 sudo systemctl reload nginx
+```
 
+---
 
-test bên ngoài
+### 2.4. Test bên ngoài
+
+```
 http://13.229.60.179
+```
 
-phải ra welcome to nginx
+**Phải ra:** welcome to nginx
 
-lắp domain
+---
 
-lấy domain trỏ về vps (tự tìm hiểu)
+## Phần 3: Lắp Domain và SSL
 
-rồi sửa lại
+### 3.1. Lắp domain
 
+**Lấy domain trỏ về VPS (tự tìm hiểu)**
+
+**Rồi sửa lại:**
+```bash
 sudo nano /etc/nginx/conf.d/k3s-ingress.conf
+```
 
+**Nội dung:**
+```nginx
 upstream ingress_http {
     least_conn;
     server 10.10.10.11:30080;
@@ -414,37 +563,52 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }
+```
 
-test + reload
+**Test + reload:**
+```bash
 sudo nginx -t
 sudo systemctl reload nginx
+```
 
-nhớ mở 80 443 trên vps
+**Nhớ mở 80 443 trên VPS**
 
-test
+**Test:**
+```
 http://thang2k6adu.xyz
+```
 
-bật https
+---
 
-cài certbot
+### 3.2. Bật HTTPS
 
+**Cài Certbot:**
+```bash
 sudo apt update
 sudo apt install certbot python3-certbot-nginx -y
+```
 
+**Chạy Certbot:**
+```bash
 sudo certbot --nginx -d thang2k6adu.xyz -d www.thang2k6adu.xyz
+```
 
-chọn email
+- Chọn email
+- Chọn: redirect HTTP → HTTPS = YES
 
-chọn
-redirect HTTP → HTTPS = YES
-
-CertBot tự sửa config thành
-
+**CertBot tự sửa config thành:**
+```nginx
 listen 443 ssl;
 ssl_certificate /etc/letsencrypt/live/thang2k6adu.com/fullchain.pem;
 ssl_certificate_key /etc/letsencrypt/live/thang2k6adu.com/privkey.pem;
+```
 
-giờ sửa lại (trên master)
+---
+
+### 3.3. Cập nhật config cho HTTPS (port 30443)
+
+**Giờ sửa lại (trên master):**
+```bash
 ansible-inventory -i ~/k3s-inventory/hosts.ini --list \
 | jq -r '
 ._meta.hostvars
@@ -454,17 +618,25 @@ ansible-inventory -i ~/k3s-inventory/hosts.ini --list \
 '
 echo "}
 "
+```
 
-phải ra
+**Phải ra:**
+```nginx
     server 10.10.10.11:30443;
     server 10.10.10.13:30443;
     server 10.10.10.12:30443;
+```
 
-lên vps sửa lại
+---
 
+### 3.4. Lên VPS sửa lại config
+
+```bash
 sudo nano /etc/nginx/conf.d/k3s-ingress.conf
+```
 
-nhớ sửa cả
+**Nhớ sửa cả:**
+```nginx
 location / {
     proxy_pass https://ingress_http;
     proxy_set_header Host $host;
@@ -473,8 +645,10 @@ location / {
 
     proxy_ssl_server_name on;
 }
+```
 
-phải là 
+**Phải là:**
+```nginx
 upstream ingress_http {
     least_conn;
 
@@ -517,148 +691,34 @@ server {
 
     return 404;
 }
+```
 
+---
 
-test
+### 3.5. Test và reload
+
+```bash
 sudo nginx -t
 sudo systemctl reload nginx
+```
 
-test
+**Test:**
+```
 https://thang2k6adu.xyz
+```
 
-check auto renew
+---
+
+### 3.6. Check auto renew
+
+```bash
 sudo certbot renew --dry-run
+```
 
-tạo test ingress dashboard (master)
-thêm subdomain dashboard.thang2k6adu.xyz
+---
 
-rồi lên vps chạy
-lệnh script thêm domain
-sudo nano /usr/local/bin/add-domain.sh
+## Phần 4: Tạo Test Ingress Dashboard
 
-#!/bin/bash
+**Tạo test ingress dashboard (master)**
 
-DOMAIN=$1
-
-if [ -z "$DOMAIN" ]; then
-  echo "Usage: add-domain.sh domain.com"
-  exit 1
-fi
-
-CONF="/etc/nginx/conf.d/$DOMAIN.conf"
-
-cat > $CONF <<EOF
-server {
-    listen 80;
-    server_name $DOMAIN;
-
-    location / {
-        proxy_pass https://ingress_http;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_ssl_server_name on;
-    }
-}
-EOF
-
-nginx -t || exit 1
-systemctl reload nginx
-
-certbot --nginx -d $DOMAIN
-
-echo "DONE: https://$DOMAIN"
-
-
-sudo chmod +x /usr/local/bin/add-domain.sh
-
-dùng
-
-sudo add-domain.sh dashboard.thang2k6adu.xyz
-
- (xin ssl cert)
-sudo certbot --nginx -d dashboard.thang2k6adu.xyz
-
-check
-sudo nano /etc/nginx/conf.d/dashboard.thang2k6adu.xyz.conf
-
-
-check
-sudo nano /etc/nginx/conf.d/k3s-ingress.conf
-
-
-nano ~/k8s-manifest/dashboard-ingress.yaml
-
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: dashboard-ingress
-  namespace: kubernetes-dashboard
-  annotations:
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
-    nginx.ingress.kubernetes.io/proxy-ssl-verify: "off"
-spec:
-  ingressClassName: nginx
-  rules:
-  - host: thang2k6adu.xyz
-    http:
-      paths:
-      - path: /dashboard(/|$)(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: kubernetes-dashboard
-            port:
-              number: 443
-
-
-apply
-kubectl apply -f ~/k8s-manifest/dashboard-ingress.yaml
-
-check
-https://thang2k6adu.xyz/dashboard
-
-Client HTTPS
- → VPS Nginx (443)
- → proxy_pass tới node:30443
- → Ingress NGINX (443)
- → Service kubernetes-dashboard:443
- → Pod dashboard
-
-
-hướng dẫn mở rộng chuẩn, thêm domain mới dễ, auto mation
-
-1️⃣ File backend riêng
-
-/etc/nginx/backends/ingress.conf
-
-server 10.10.10.11:30443;
-server 10.10.10.12:30443;
-server 10.10.10.13:30443;
-
-2️⃣ nginx vhost chỉ include
-upstream ingress_http {
-    least_conn;
-    include /etc/nginx/backends/ingress.conf;
-}
-
-✅ 3️⃣ Script thêm node (automation)
-
-automation thêm domain mới
-Vậy bắt buộc vào là phải  vào 443 + ssl
-
-/etc/nginx/nginx.conf (file global, ko động vào)
-/etc/nginx/conf.d/
-    ingress_upstream.conf
-    rate_limit.conf
-    security.conf
-
-/etc/nginx/sites-available/
-    thang2k6adu.xyz
-    api.thang2k6adu.xyz
-    dashboard.thang2k6adu.xyz
-
-/etc/nginx/sites-enabled/
-    thang2k6adu.xyz -> ../sites-available/thang2k6adu.xyz
-    api.thang2k6adu.xyz -> ../sites-available/api.thang2k6adu.xyz
+**Thêm subdomain:** `dashboard.thang2k6adu.xyz`
