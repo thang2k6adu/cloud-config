@@ -26,7 +26,44 @@
 
 ## Setup trên VPS
 
-### 1. Tạo backend list riêng
+### 1. Cài đặt Nginx
+
+```bash
+sudo apt update
+sudo apt install nginx -y
+```
+
+---
+
+### 2. Lấy IP của tất cả các node (workers:master)
+
+**Cài jq:** trên master
+```bash
+sudo apt update
+sudo apt install -y jq
+```
+
+**Lấy IP VPN:** trên master
+```bash
+ansible-inventory -i ~/k3s-inventory/hosts.ini --list \
+| jq -r '
+._meta.hostvars
+| to_entries[]
+| select(.value.ansible_user=="thang2k6adu")
+| "server \(.value.vpn_ip):30080;"
+'
+```
+
+**Phải ra:**
+```nginx
+    server 10.10.10.11:30080;
+    server 10.10.10.13:30080;
+    server 10.10.10.12:30080;
+```
+
+---
+
+### 3. Tạo backend list riêng
 
 ```bash
 sudo mkdir -p /etc/nginx/backends
@@ -42,7 +79,7 @@ server 10.10.10.13:30443;
 
 ---
 
-### 2. Tạo upstream Global
+### 4. Tạo upstream Global
 
 ```bash
 sudo nano /etc/nginx/conf.d/ingress_upstream.conf
@@ -58,7 +95,7 @@ upstream ingress_http {
 
 ---
 
-### 3. Tạo security global
+### 5. Tạo security global
 
 ```bash
 sudo nano /etc/nginx/conf.d/security.conf
@@ -76,7 +113,7 @@ add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; prelo
 
 ---
 
-### 4. Rate limit
+### 6. Rate limit
 
 ```bash
 sudo nano /etc/nginx/conf.d/rate_limit.conf
