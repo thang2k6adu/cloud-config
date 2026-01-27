@@ -625,3 +625,40 @@ Client HTTPS
  → Ingress NGINX (443)
  → Service kubernetes-dashboard:443
  → Pod dashboard
+
+
+hướng dẫn mở rộng chuẩn, thêm domain mới dễ, auto mation
+
+1️⃣ File backend riêng
+
+/etc/nginx/backends/ingress.conf
+
+server 10.10.10.11:30443;
+server 10.10.10.12:30443;
+server 10.10.10.13:30443;
+
+2️⃣ nginx vhost chỉ include
+upstream ingress_http {
+    least_conn;
+    include /etc/nginx/backends/ingress.conf;
+}
+
+✅ 3️⃣ Script thêm node (automation)
+
+automation thêm domain mới
+Vậy bắt buộc vào là phải  vào 443 + ssl
+
+/etc/nginx/nginx.conf (file global, ko động vào)
+/etc/nginx/conf.d/
+    ingress_upstream.conf
+    rate_limit.conf
+    security.conf
+
+/etc/nginx/sites-available/
+    thang2k6adu.xyz
+    api.thang2k6adu.xyz
+    dashboard.thang2k6adu.xyz
+
+/etc/nginx/sites-enabled/
+    thang2k6adu.xyz -> ../sites-available/thang2k6adu.xyz
+    api.thang2k6adu.xyz -> ../sites-available/api.thang2k6adu.xyz
