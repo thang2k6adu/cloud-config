@@ -16,10 +16,10 @@
     cache.conf
 
 /etc/nginx/sites-available/
-    thang2k6adu.xyz
+    kruzetech.dev
 
 /etc/nginx/sites-enabled/
-    thang2k6adu.xyz -> ../sites-available/thang2k6adu.xyz
+    kruzetech.dev -> ../sites-available/kruzetech.dev
 ```
 
 ---
@@ -50,7 +50,7 @@ ansible-inventory -i ~/k3s-inventory/hosts.ini --list \
 ._meta.hostvars
 | to_entries[]
 | select(.value.ansible_user=="thang2k6adu")
-| "server \(.value.vpn_ip):30080;"
+| "server \(.value.vpn_ip):30443;"
 '
 ```
 
@@ -135,16 +135,16 @@ limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
 ```nginx
 server {
     listen 80;
-    server_name thang2k6adu.xyz www.thang2k6adu.xyz;
+    server_name kruzetech.dev www.kruzetech.dev;
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name thang2k6adu.xyz www.thang2k6adu.xyz;
+    server_name kruzetech.dev www.kruzetech.dev;
 
-    ssl_certificate /etc/letsencrypt/live/thang2k6adu.xyz/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/thang2k6adu.xyz/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/kruzetech.dev/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/kruzetech.dev/privkey.pem;
 
     location / {
         proxy_pass https://ingress_http;
@@ -174,6 +174,8 @@ server {
 sudo nano /usr/local/bin/add-domain
 sudo chmod +x /usr/local/bin/add-domain
 ```
+cài certbot
+sudo apt install -y certbot python3-certbot-nginx
 
 **Nội dung `/usr/local/bin/add-domain`:**
 ```bash
@@ -270,7 +272,7 @@ systemctl reload nginx
 ### Thêm domain
 
 ```bash
-sudo add-domain dashboard.thang2k6adu.xyz
+sudo add-domain dashboard.kruzetech.dev
 ```
 
 **Lưu ý:** thêm domain thì phải thêm www. nữa nhé
@@ -289,8 +291,83 @@ nginx -t && systemctl reload nginx
 ### Remove domain
 
 ```bash
-sudo rm -f /etc/nginx/sites-enabled/dashboard.thang2k6adu.xyz
-sudo rm -f /etc/nginx/sites-available/dashboard.thang2k6adu.xyz
-sudo certbot delete --cert-name dashboard.thang2k6adu.xyz
+sudo rm -f /etc/nginx/sites-enabled/dashboard.kruzetech.dev
+sudo rm -f /etc/nginx/sites-available/dashboard.kruzetech.dev
+sudo certbot delete --cert-name dashboard.kruzetech.dev
 sudo nginx -t && sudo systemctl reload nginx
 ```
+
+lên master node thêm cái để test
+
+thêm ingress cho dashboard bên K3S
+
+check
+kubectl get svc -n kubernetes-dashboard
+
+tạo
+nano ~/k8s-manifest/dashboard-ingress.yaml
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dashboard-ingress
+  namespace: kubernetes-dashboard
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+spec:
+  rules:
+  - host: dashboard.kruzetech.dev
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: kubernetes-dashboard
+            port:
+              number: 443
+
+
+apply
+kubectl apply -f ~/k8s-manifest/dashboard-ingress.yaml
+
+check
+kubectl get ingress -n kubernetes-dashboard
+
+lấy token
+kubectl -n kubernetes-dashboard create token kubernetes-dashboard-admin
+
+đăng nhập dashboard với token trên
+
+tạo ingress grafana
+nano ~/k8s-manifest/grafana-ingress.yaml
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana-ingress
+  namespace: monitoring
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: grafana.kruzetech.dev
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: monitoring-grafana
+            port:
+              number: 80
+
+apply
+kubectl apply -f ~/k8s-manifest/grafana-ingress.yaml
+
+check 
+kubectl get ingress -n monitoring
+
+add domain
+
+luồng chuẩn
+tạo pod -> service -> ingress -> nginx reverse proxy (add domain) -> internets

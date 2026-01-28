@@ -11,7 +11,7 @@ sudo nano /etc/hosts
 Ví dụ nội dung:
 ```txt
 127.0.0.1 localhost
-192.168.0.10 k3s-master
+192.168.0.50 k3s-master
 ```
 
 Reboot:
@@ -50,7 +50,7 @@ network:
     ens33:
       dhcp4: no
       addresses:
-        - 192.168.0.10/24
+        - 192.168.0.50/24
       gateway4: 192.168.0.1
       nameservers:
         addresses:
@@ -106,11 +106,11 @@ cat ~/k3s-inventory/hosts.ini
 Kết quả mong đợi:
 ```ini
 [master]
-192.168.0.10 ansible_user=thang2k6adu ansible_port=8022 worker_ip=192.168.0.10
+192.168.0.50 ansible_user=thang2k6adu ansible_port=8022 worker_ip=192.168.0.50
 
 [workers]
-192.168.0.105 ansible_user=thang2k6adu ansible_port=8022 worker_ip=192.168.0.105
-192.168.0.106 ansible_user=thang2k6adu ansible_port=8022 worker_ip=192.168.0.106
+192.168.0.505 ansible_user=thang2k6adu ansible_port=8022 worker_ip=192.168.0.505
+192.168.0.506 ansible_user=thang2k6adu ansible_port=8022 worker_ip=192.168.0.506
 ```
 
 ## BƯỚC 4: CÀI K3S CONTROL PLANE (MASTER)
@@ -150,30 +150,27 @@ sudo apt install ansible -y
 
 Lưu ý phải lắp ssh vào master node trước khi ssh
 
-Windows:
-```bash
-type ~/.ssh/id_ed25519
-```
+tạo ssh
+ssh-keygen -t ed25519 -C "k3s-master"
 
-Linux:
-```bash
-cat ~/.ssh/id_ed25519
-```
+lấy public key
+cat ~/.ssh/id_ed25519.pub
 
-Vào server tạo ssh private để ssh vào các node, paste cái bên trên vào:
-```bash
-nano ~/.ssh/id_ed25519
-```
+phân quyền
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/authorized_keys
 
-Phân quyền owner:
-```bash
-chmod 700 /home/thang2k6adu/.ssh
-chmod 600 /home/thang2k6adu/.ssh/id_ed25519
+cho vào các node
+phân quyền
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/authorized_keys
+
+
 ```
 
 Test kết nối:
 ```bash
-ansible all -i ~/k3s-inventory/hosts.ini -m ping
+ansible workers -i ~/k3s-inventory/hosts.ini -m ping
 ```
 
 ## SET SUDO KHÔNG PASSWORD (CHO WORKER)
@@ -309,8 +306,8 @@ nano ~/k3s-inventory/install-k3s-worker.yml
 - hosts: workers
   become: yes
   vars:
-    k3s_url: "https://192.168.0.10:6443"
-    k3s_token: "K1053ef82a41ac462a03f87dc5182f22c7fa633ea8b35367340a7d4dcfd6231e2ef::server:1e99a2069d586655d94c286f4a475192"
+    k3s_url: "https://192.168.0.50:6443"
+    k3s_token: "K1003411f61437bb01f4e057e32c1c7ab85849b89c256e5402cd739a91bbafeb487::server:c1b0dc8341dd56fa744edee71ff297c0"
 
   tasks:
     - name: Install k3s agent
@@ -370,9 +367,9 @@ kubectl get nodes -o wide
 Output:
 ```
 NAME         STATUS   ROLES           IP
-k3s-master   Ready    control-plane   192.168.0.10
-worker1      Ready    <none>          192.168.0.105
-worker2      Ready    <none>          192.168.0.106
+k3s-master   Ready    control-plane   192.168.0.50
+worker1      Ready    <none>          192.168.0.505
+worker2      Ready    <none>          192.168.0.506
 ```
 
 ## SET ROLE CHO WORKER
@@ -388,8 +385,8 @@ kubectl get nodes
 Output:
 ```
 NAME            STATUS   ROLES    AGE
-192.168.0.105   Ready    worker   1d
-192.168.0.106   Ready    worker   1d
+192.168.0.505   Ready    worker   1d
+192.168.0.506   Ready    worker   1d
 ```
 
 # 🚀 CÀI HELM + KUBERNETES DASHBOARD
@@ -459,7 +456,7 @@ Nếu không mở proxy tại port `8001` thì phải vào `6443` (chắc chắn
 
 Truy cập Dashboard:
 ```
-http://192.168.0.10:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/
+http://192.168.0.50:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/
 ```
 
 Giải thích:
@@ -529,7 +526,7 @@ nginx   NodePort   10.43.7.190   <none>        80:30582/TCP   11s
 
 Vào:
 ```
-http://192.168.0.105:30582
+http://192.168.0.505:30582
 ```
 
 ### Scale thử
@@ -570,6 +567,10 @@ mkdir -p ~/.kube
 sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
 sudo chown $USER:$USER ~/.kube/config
 ```
+
+fix lỗi 127.0.0.1
+echo 'export KUBECONFIG=/etc/rancher/k3s/k3s.yaml' >> ~/.bashrc
+source ~/.bashrc
 
 ### Trước khi cài nginx, cài monitoring
 ```bash
@@ -750,7 +751,7 @@ metadata:
   namespace: test-nginx
 spec:
   rules:
-  - host: thang2k6adu.xyz
+  - host: kruzetech.dev
     http:
       paths:
       - path: /
@@ -781,7 +782,7 @@ notepad C:\Windows\System32\drivers\etc\hosts
 
 Thêm vào:
 ```
-192.168.0.105 nginx.local
+192.168.0.505 nginx.local
 ```
 
 (Lưu ý là chỉ node nào có pod mới được)
@@ -804,3 +805,4 @@ Vào:
 ```
 http://nginx.local
 ```
+

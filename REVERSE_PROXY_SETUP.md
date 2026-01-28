@@ -29,6 +29,11 @@ CLIENT (trình duyệt)
 
 ---
 
+fix lỗi máy master (lỗi quyền)
+
+cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+
 ## Phần 1: Cài Đặt WireGuard
 
 ### 1.1. Cài đặt WireGuard trên tất cả server (trên master)
@@ -110,7 +115,7 @@ cat ~/k3s-inventory/hosts.ini
 
 ### 1.3. Cài WireGuard trên VPS
 
-**Cài đặt:**
+**Cài đặt:**z
 ```bash
 sudo apt update
 sudo apt install wireguard -y
@@ -126,7 +131,7 @@ sudo sh -c 'umask 077; wg genkey | tee /etc/wireguard/privatekey | wg pubkey > /
 sudo cat /etc/wireguard/publickey
 ```
 
-Ví dụ: `JKL1bfmnfZfoS/QyQKIVW5mgENgNh4CyhlYi2ObqVUs=`
+Ví dụ: `HPXXUZHlQpUpJ5ylk5K+ZjqemQajcCbYXnr7mSRv/2k=`
 
 ---
 
@@ -217,10 +222,10 @@ cat ~/k3s-inventory/hosts.ini
 nano ~/k3s-inventory/hosts.ini
 ```
 
-**Thêm (nhớ thay ip public, user và public key):**
+**Thêm (nhớ thay ip public, user và public key, ip của vps):**
 ```ini
 [vps]
-13.229.60.179 ansible_user=ubuntu vpn_ip=10.10.10.1 wg_public_key=JKL1bfmnfZfoS/QyQKIVW5mgENgNh4CyhlYi2ObqVUs=
+13.229.60.179 ansible_user=ubuntu vpn_ip=10.10.10.1 wg_public_key=HPXXUZHlQpUpJ5ylk5K+ZjqemQajcCbYXnr7mSRv/2k=
 ```
 
 ---
@@ -328,6 +333,21 @@ ansible-playbook -i ~/k3s-inventory/hosts.ini ~/k3s-inventory/gen-vps-wg.yml
 ```bash
 cat ~/k3s-inventory/wg0.vps.conf
 ```
+phải ra
+[Interface]
+Address = 10.10.10.1/24
+ListenPort = 51820
+PrivateKey = PASTE_PRIVATE_KEY_VPS_HERE
+
+[Peer]
+PublicKey = 7GPiM+Ju79MBDVJJvL5uGHAJM71VTtZsGq2pQZlC4iQ=
+AllowedIPs = 10.10.10.11/32
+
+[Peer]
+PublicKey = r3Gh8n6lmfWbSWykd766yQ27tKEt2PuWIMhxaDK7km4=
+AllowedIPs = 10.10.10.12/32
+
+
 
 ---
 
@@ -384,6 +404,48 @@ sudo systemctl start wg-quick@wg0
 sudo systemctl status wg-quick@wg0
 ```
 
+restart nếu cần
+
+nano ~/k3s-inventory/restart-wireguard.yml
+
+- name: Restart WireGuard on all nodes
+  hosts: master:workers
+  become: true
+  tasks:
+    - name: Restart wg-quick@wg0
+      systemd:
+        name: wg-quick@wg0
+        state: restarted
+        enabled: yes
+
+    - name: Wait for WireGuard to stabilize
+      pause:
+        seconds: 3
+
+    - name: Show WireGuard status
+      command: wg
+      register: wg_status
+
+    - name: Show wg0 interface
+      command: ip a show wg0
+      register: ip_status
+
+    - name: Print wg status
+      debug:
+        msg: "{{ wg_status.stdout }}"
+
+    - name: Print ip status
+      debug:
+        msg: "{{ ip_status.stdout }}"
+
+chạy
+
+ansible-playbook -i ~/k3s-inventory/hosts.ini ~/k3s-inventory/restart-wireguard.yml
+
+vps
+
+sudo systemctl restart wg-quick@wg0
+
 **Check:**
 ```bash
 sudo wg
@@ -436,6 +498,41 @@ nano ~/k3s-inventory/start-wireguard.yml
 ```bash
 ansible-playbook -i ~/k3s-inventory/hosts.ini ~/k3s-inventory/start-wireguard.yml
 ```
+
+mở port các node
+nano ~/k3s-inventory/open-wireguard-port.yml
+
+- name: Open WireGuard UDP port 51820
+  hosts: master:workers
+  become: true
+  tasks:
+    - name: Ensure ufw is installed
+      apt:
+        name: ufw
+        state: present
+        update_cache: yes
+
+    - name: Allow WireGuard port 51820/udp
+      ufw:
+        rule: allow
+        port: 51820
+        proto: udp
+
+    - name: Enable ufw
+      ufw:
+        state: enabled
+        policy: allow
+
+    - name: Show ufw status
+      command: ufw status
+      register: ufw_status
+
+    - debug:
+        msg: "{{ ufw_status.stdout }}"
+
+chạy
+ansible-playbook -i ~/k3s-inventory/hosts.ini ~/k3s-inventory/open-wireguard-port.yml
+
 
 **Test trên node (nào cũng được), nếu fail hãy mở port vps:**
 ```bash
