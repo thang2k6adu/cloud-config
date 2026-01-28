@@ -367,6 +367,12 @@ kubectl apply -f ~/k8s-manifest/grafana-ingress.yaml
 check 
 kubectl get ingress -n monitoring
 
+get user name password
+kubectl get secret -n monitoring monitoring-grafana -o jsonpath="{.data.admin-user}" | base64 -d
+kubectl get secret -n monitoring monitoring-grafana -o jsonpath="{.data.admin-password}" | base64 -d
+
+vd: admin 5JjHIRvh7GJtWjgcMDW
+
 add domain
 
 luồng chuẩn
